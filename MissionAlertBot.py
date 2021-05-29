@@ -78,6 +78,8 @@ mission_db = missions_conn.cursor()
 #                       DATABASE STUFF
 #
 
+# TEST DEBUG FLAG ONLY
+debugging_carrier_edit = False
 
 print('MissionAlertBot starting')
 print(f'Configuring to run against: {"Production" if _production else "Testing"} env.')
@@ -510,6 +512,15 @@ def user_exit():
 
 bot = commands.Bot(command_prefix='m.', intents=discord.Intents.all())
 slash = SlashCommand(bot, sync_commands=True)
+
+@bot.event
+async def on_message(message):
+    # do some extra stuff here
+    global debugging_carrier_edit
+    if debugging_carrier_edit:
+        print(f'Carrier Edit on going. this message is: {message} from {message.author} in channel: {message.channel} repr:{repr(message)}')
+
+    await bot.process_commands(message)
 
 @bot.event
 async def on_ready():
@@ -1755,13 +1766,17 @@ async def edit_carrier(ctx, carrier_name):
     :param str carrier_name: The carrier name to find
     :returns: None
     """
-    print(f'edit_carrier called by {ctx.author} to update the carrier: {carrier_name} from channel: {ctx.channel}')
+    global debugging_carrier_edit
+    debugging_carrier_edit = True
+    print(f'edit_carrier called by {ctx.author} to update the carrier: {carrier_name} from channel: {ctx.channel} - '
+          f'{ctx}')
 
     # make sure we are in the right channel
     bot_command_channel = bot.get_channel(conf['BOT_COMMAND_CHANNEL'])
     current_channel = ctx.channel
     if current_channel != bot_command_channel:
         # problem, wrong channel, no progress
+        debugging_carrier_edit = False
         return await ctx.send(f'Sorry, you can only run this command out of: {bot_command_channel}.')
 
     # Go fetch the carrier details by searching for the name
@@ -1780,7 +1795,8 @@ async def edit_carrier(ctx, carrier_name):
         edit_carrier_data = await _determine_db_fields_to_edit(ctx, carrier_data)
         if not edit_carrier_data:
             # The determination told the user there was an error. Wipe the original message and move on
-            initial_message.delete()
+            await initial_message.delete()
+            debugging_carrier_edit = False
             return
 
         # Now we know what fields to edit, go do something with them, first display them to the user
@@ -1796,21 +1812,22 @@ async def edit_carrier(ctx, carrier_name):
         confirm_embed.set_footer(text='y/n - yes, no.')
         message_confirm = await ctx.send(embed=confirm_embed)
 
-        def check_confirm(message):
-            return message.content and message.author == ctx.author and message.channel == ctx.channel and \
+        async def check_confirm(message):
+            return await message.content and message.author == ctx.author and message.channel == ctx.channel and \
                    all(character in 'yn' for character in set(message.content.lower())) and len(message.content) == 1
 
         try:
 
             msg = await bot.wait_for("message", check=check_confirm, timeout=30)
             if "n" in msg.content.lower():
-                print(f'User {ctx.author} requested to cancel the edit operation.')
+                print(f'User {ctx.author} requested to cancel the edit operation. {ctx}')
                 # immediately stop if there's an x anywhere in the message, even if there are other proper inputs
                 await ctx.send("**Edit operation cancelled by the user.**")
                 await msg.delete()
                 await message_confirm.delete()
                 await edit_send.delete()
                 await initial_message.delete()
+                debugging_carrier_edit = False
                 return None  # Exit the check logic
 
             elif 'y' in msg.content.lower():
@@ -1823,6 +1840,7 @@ async def edit_carrier(ctx, carrier_name):
             await edit_send.delete()
             await message_confirm.delete()
             await initial_message.delete()
+            debugging_carrier_edit = False
             return None  # Exit the check logic
 
         # Go update the details to the database
@@ -1847,11 +1865,14 @@ async def edit_carrier(ctx, carrier_name):
                                   color=constants.EMBED_COLOUR_OK)
             embed = _configure_all_carrier_detail_embed(embed, updated_carrier_data)
             await initial_message.delete()
+            debugging_carrier_edit = False
             return await ctx.send(embed=embed)
         else:
             await ctx.send('We did not find the new database entry - that is not good.')
-
+            debugging_carrier_edit = False
     else:
+
+        debugging_carrier_edit = False
         return await ctx.send(f'No result found for the carrier: "{carrier_name}".')
 
 
@@ -1915,11 +1936,11 @@ async def _determine_db_fields_to_edit(ctx, carrier_data):
                           description=f"Editing in progress for {carrier_data.carrier_long_name}",
                           color=constants.EMBED_COLOUR_OK)
 
-    async def check_confirm(message):
-        return message.content and message.author == ctx.author and message.channel == ctx.channel and \
+    async def check_confirm(message, user):
+        return message.content and user == ctx.author and message.channel == ctx.channel and \
             all(character in 'ynx' for character in set(message.content.lower())) and len(message.content) == 1
 
-    def check_user(message):
+    async def check_user(message):
         return message.content and message.author == ctx.author and message.channel == ctx.channel
 
     # These two are used below, initial value so we can wipe the message out if needed
@@ -1940,16 +1961,17 @@ async def _determine_db_fields_to_edit(ctx, carrier_data):
             continue
 
         print(f'Looking to see if the user wants to edit the field {field} for carrier: '
-              f'{carrier_data.carrier_long_name}')
+              f'{carrier_data.carrier_long_name} from {ctx}')
 
         # Go ask the user for each one if they want to update, and if yes then to what.
         embed.add_field(name=f'Do you want to update the carriers: "{field}" value?',
                         value=f'Current Value: "{getattr(carrier_data, field)}"', inline=True)
         embed.set_footer(text='y/n/x - yes, no or cancel the operation')
         message_confirm = await ctx.send(embed=embed)
-
+        init_channel = ctx.channel
         try:
             msg = await bot.wait_for("message", check=check_confirm, timeout=30)
+            curr_channel = msg.channel
             if "x" in msg.content.lower():
                 print(f'User {ctx.author} requested to cancel the edit operation.')
                 # immediately stop if there's an x anywhere in the message, even if there are other proper inputs
@@ -1982,10 +2004,13 @@ async def _determine_db_fields_to_edit(ctx, carrier_data):
                 # Use setattr to change the value of the variable field object to the user input
                 setattr(new_carrier_data, field, msg.content.strip())
             else:
+                print(f'{ctx.author} provided the invalid input: {msg.content} from object: {ctx}.')
+                print(f'Expected channel: {init_channel} - received channel: {curr_channel}')
                 # Should never be hitting this as we gate the message
                 await ctx.send(f"**I cannot do anything with that entry '{msg.content}', please stick to y, n or x.**")
                 return None  # Break condition just in case
         except asyncio.TimeoutError:
+            print(f'Carrier edit requested by {ctx.author} timed out. Context: {ctx}')
             await ctx.send("**Edit operation timed out (no valid response from user).**")
             await message_confirm.delete()
             return None
