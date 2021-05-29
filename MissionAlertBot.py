@@ -1812,8 +1812,8 @@ async def edit_carrier(ctx, carrier_name):
         confirm_embed.set_footer(text='y/n - yes, no.')
         message_confirm = await ctx.send(embed=confirm_embed)
 
-        async def check_confirm(message):
-            return await message.content and message.author == ctx.author and message.channel == ctx.channel and \
+        def check_confirm(message):
+            return message.content and message.author == ctx.author and message.channel == ctx.channel and \
                    all(character in 'yn' for character in set(message.content.lower())) and len(message.content) == 1
 
         try:
@@ -1936,11 +1936,11 @@ async def _determine_db_fields_to_edit(ctx, carrier_data):
                           description=f"Editing in progress for {carrier_data.carrier_long_name}",
                           color=constants.EMBED_COLOUR_OK)
 
-    async def check_confirm(message, user):
-        return message.content and user == ctx.author and message.channel == ctx.channel and \
+    def check_confirm(message):
+        return message.content and message.author == ctx.author and message.channel == ctx.channel and \
             all(character in 'ynx' for character in set(message.content.lower())) and len(message.content) == 1
 
-    async def check_user(message):
+    def check_user(message):
         return message.content and message.author == ctx.author and message.channel == ctx.channel
 
     # These two are used below, initial value so we can wipe the message out if needed
