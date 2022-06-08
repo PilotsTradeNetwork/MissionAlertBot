@@ -62,9 +62,12 @@ EMBED_COLOUR_RP = 0xff00ff              # pink
 EMBED_COLOUR_ERROR = 0x800000           # dark red
 EMBED_COLOUR_QU = 0x80ffff              # same as loading
 EMBED_COLOUR_OK = 0x80ff80              # same as unloading
+EMBED_COLOUR_WORDPRESS = 0xff80ff       #pinkish
 
 REDDIT_DISCORD_LINK_URL = \
     'https://www.reddit.com/r/PilotsTradeNetwork/comments/l0y7dk/pilots_trade_network_intergalactic_discord_server/'
+
+WORDPRESS_DISCORD_LINK_URL = "https://discord.gg/AfdM4mhh"
 
 
 def get_constant(production: bool):
@@ -100,7 +103,7 @@ def get_constant(production: bool):
             'TRADE_CAT' : PROD_TRADE_CAT,
             'ARCHIVE_CAT' : PROD_ARCHIVE_CAT,
             'SECONDS_SHORT' : PROD_SECONDS_SHORT,
-            'SECONDS_LONG' : PROD_SECONDS_LONG
+            'SECONDS_LONG' : PROD_SECONDS_LONG,
         }
     else:
         result = {
@@ -127,7 +130,7 @@ def get_constant(production: bool):
             'TRADE_CAT' : TEST_TRADE_CAT,
             'ARCHIVE_CAT' : TEST_ARCHIVE_CAT,
             'SECONDS_SHORT' : TEST_SECONDS_SHORT,
-            'SECONDS_LONG' : TEST_SECONDS_LONG
+            'SECONDS_LONG' : TEST_SECONDS_LONG,
         }
 
     return result
