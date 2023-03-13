@@ -3758,7 +3758,7 @@ class RemoveCCView(View):
         delete_channel = 0
         print("User chose to archive channel.")
         await _remove_cc_manager(interaction, delete_channel, self)
-        
+
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.gray, emoji="✖", custom_id="cancel")
     async def cancel_button_callback(self, interaction, button):
@@ -3866,7 +3866,7 @@ async def _remove_cc_manager(interaction, delete_channel, button_self):
     print("Processing archive flag...")
 
     if not delete_channel: embed = await _archive_cc_channel(interaction, embed, button_self, 0) # the 0 sets the number of attempts to archive the channel
-     
+
     # delete role
     print("Deleting role...")
     embed = await _cc_role_delete(interaction, role_id, embed)
@@ -4380,7 +4380,7 @@ async def _community_channel_help(interaction: discord.Interaction):
 # prints information about /nominate to current channel
 @bot.tree.command(name="thanks",
     description="COMMUNITY TEAM ONLY: Display information about the /nominate command.", guild=guild_obj)
-@check_roles([cpillar_role_id, cmentor_role_id, botadmin_role_id, mod_role_id]) 
+@check_roles([cpillar_role_id, cmentor_role_id, botadmin_role_id, mod_role_id])
 async def _thanks(interaction: discord.Interaction):
     print(f"/thanks called by {interaction.user} in {interaction.channel.name}")
     embed = discord.Embed(title=":heart: NOMINATE TO APPRECIATE :heart:",
