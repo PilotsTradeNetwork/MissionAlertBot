@@ -1748,9 +1748,13 @@ async def create_mission_temp_channel(ctx, discord_channel, owner_id, shortname)
     except:
         raise EnvironmentError(f'Could not find Discord user matching ID {owner_id}')
 
-    # add owner to channel permissions
     overwrite = await get_overwrite_perms()
+
     try:
+        # first make sure it has the default permissions for the category
+        await mission_temp_channel.edit(sync_permissions=True)
+        print("Synced permissions with parent category")
+        # now add the owner with superpermissions
         await mission_temp_channel.set_permissions(member, overwrite=overwrite)
         print(f"Set permissions for {member} in {mission_temp_channel}")
     except Forbidden:
