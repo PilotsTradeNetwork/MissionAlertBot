@@ -1734,8 +1734,6 @@ async def create_mission_temp_channel(ctx, discord_channel, owner_id, shortname)
         mission_temp_channel_id = mission_temp_channel.id
         print(f"Created {mission_temp_channel}")
 
-    print(f'Channels: {ctx.guild.channels}')
-
     if not mission_temp_channel:
         raise EnvironmentError(f'Could not create carrier channel {discord_channel}')
 
