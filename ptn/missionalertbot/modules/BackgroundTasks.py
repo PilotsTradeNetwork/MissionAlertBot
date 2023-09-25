@@ -23,6 +23,7 @@ from ptn.missionalertbot.database.database import CarrierDbFields, carrier_db, m
 
 
 # monitor reddit comments
+@tasks.loop(seconds=60)
 async def _monitor_reddit_comments():
     print("Reddit monitor started")
     while True:
@@ -72,7 +73,6 @@ async def _monitor_reddit_comments():
                                             description=f"This mission is **IN PROGRESS**.\n\nComment by **{comment.author}**\n{comment.body}"
                                                         f"\n\nTo view this comment click here:\nhttps://www.reddit.com{comment.permalink}",
                                                         color=constants.EMBED_COLOUR_REDDIT)
-
                     await comment_channel.send(embed=embed)
                     print("Sent comment to channel")
         except Exception as e:

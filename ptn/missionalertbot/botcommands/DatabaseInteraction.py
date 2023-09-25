@@ -608,18 +608,29 @@ class DatabaseInteraction(commands.Cog):
 
 
     # find commodity
-    @commands.command(name='findcomm', help='Find a commodity based on a search term\n'
-                                    'If a term has too many possible matches try a longer search term.\n')
-    async def search_for_commodity(self, ctx, commodity_search_term: str):
-        print(f'search_for_commodity called by {ctx.author} to search for {commodity_search_term}')
+    @app_commands.command(name="find_commodity",
+                          description="Search for a commodity by partial match for its name.")
+    @app_commands.describe(commodity_search_term='Part of the full name of the commodity you wish to find.')
+    async def search_for_commodity(self, interaction: discord.Interaction, commodity_search_term: str):
+        print(f'search_for_commodity called by {interaction.user} to search for {commodity_search_term}')
+        class Commodity:
+            def __init__(self, commodity_search_term):
+                self.commodity_search_term = commodity_search_term
+
+        commodity_wrapper = Commodity(commodity_search_term)
+
+        await interaction.response.send_message(f"Searching for commodity {commodity_search_term}...")
+
         try:
-            commodity = await find_commodity(commodity_search_term, ctx)
+            commodity = await find_commodity(commodity_wrapper, interaction)
             if commodity:
-                return await ctx.send(commodity)
-        except:
+                return await interaction.edit_original_response(content=f'✅ {commodity}')
+            else:
+                return await interaction.edit_original_response(content=f'❌ No such commodity found for: "{commodity_search_term}".')
+        except Exception as e:
             # Catch any exception
-            pass
-        await ctx.send(f'No such commodity found for: "{commodity_search_term}".')
+            print(e)
+            return
 
 
     # find FC based on shortname

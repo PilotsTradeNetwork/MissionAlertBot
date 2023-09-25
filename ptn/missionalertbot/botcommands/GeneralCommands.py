@@ -22,7 +22,7 @@ from ptn.missionalertbot.classes.Views import MissionCompleteView
 from ptn.missionalertbot._metadata import __version__
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, bot_command_channel, bot_dev_channel, cmentor_role, certcarrier_role, \
-    admin_role, dev_role, trade_alerts_channel, mod_role, cpillar_role, bot_spam_channel
+    admin_role, dev_role, trade_alerts_channel, mod_role, cpillar_role, bot_spam_channel, bot_role
 
 # local modules
 from ptn.missionalertbot.database.database import backup_database, find_carrier, find_mission, _is_carrier_channel, \
@@ -115,20 +115,22 @@ class GeneralCommands(commands.Cog):
     # processed when the bot connects to Discord
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f'{bot.user.name} has connected to Discord!')
+        # TODO: this should be moved to an on_setup hook
+        print(f'{bot.user.name} version: {__version__} has connected to Discord!')
         devchannel = bot.get_channel(bot_dev_channel())
         embed = discord.Embed(title="MISSION ALERT BOT ONLINE", description=f"<@{bot.user.id}> connected, version **{__version__}**.", color=constants.EMBED_COLOUR_OK)
         embed.set_image(url=random.choice(constants.hello_gifs))
         await devchannel.send(embed=embed)
 
-        # define our background tasks
-        reddit_task = asyncio.create_task(_monitor_reddit_comments())
         # Check if any trade channels were not deleted before bot restart/stop
         await check_trade_channels_on_startup()
-        # start the lasttrade_cron loop.
-        await lasttrade_cron.start()
-        # start monitoring reddit comments
-        await reddit_task
+
+        # start the lasttrade_cron loop if not running
+        if not lasttrade_cron.is_running():
+            lasttrade_cron.start()
+        # start monitoring reddit comments if not running
+        if not _monitor_reddit_comments.is_running():
+            _monitor_reddit_comments.start()
 
 
     # processed on disconnect
@@ -504,13 +506,13 @@ class GeneralCommands(commands.Cog):
             print(f"{interaction.user} tried to nominate themselves for Community Pillar :]")
             return await interaction.response.send_message("You can't nominate yourself! But congrats on the positive self-esteem :)", ephemeral=True)
 
-        #Skip nominating Cpillar|Cmentor|Council|Mod
-        for avoid_role in [cpillar_role(), cmentor_role(), admin_role(), mod_role()]:
+        #Skip nominating Cpillar|Cmentor|Council|Mod|Bot
+        for avoid_role in [cpillar_role(), cmentor_role(), admin_role(), mod_role(), bot_role()]:
             if user.get_role(avoid_role):
                 print(f"{interaction.user} tried to nominate a Cpillar|Cmentor|Council|Mod : {user.name}")
                 return await interaction.response.send_message(
                     (f"You can't nominate an existing <@&{cpillar_role()}>,"
-                    f" <@&{cmentor_role()}>, <@&{admin_role()}> or <@&{mod_role()}>."
+                    f" <@&{cmentor_role()}>, <@&{admin_role()}>, <@&{mod_role()}> or bot."
                     " But we appreciate your nomination attempt!"),
                     ephemeral=True)
 

@@ -14,11 +14,7 @@ class Commodity:
             info_dict = dict()
 
         self.name = info_dict.get('commodity', None)
-        self.average_sell = info_dict.get('avgsell', None)
-        self.average_buy = info_dict.get('avgbuy', None)
-        self.max_sell = info_dict.get('maxsell', None)
-        self.min_buy = info_dict.get('minbuy', None)
-        self.max_profit = info_dict.get('maxprofit', None)
+        self.entry_id = info_dict.get('entry_id', None)
 
     def to_dictionary(self):
         """
@@ -39,8 +35,7 @@ class Commodity:
 
         :rtype: str
         """
-        return 'Commodity: Name: "{0.name}" AverageSell: {0.average_sell} AverageBuy: {0.average_buy} ' \
-               'MaxSell: {0.max_sell} MinBuy: {0.min_buy} MaxProfit: {0.max_profit}'.format(self)
+        return 'Commodity: Name: "{0.name}" DB ID: {0.entry_id}'.format(self)
 
     def __bool__(self):
         """

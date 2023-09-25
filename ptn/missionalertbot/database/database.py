@@ -27,6 +27,7 @@ from ptn.missionalertbot.classes.WebhookData import WebhookData
 # local constants
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot
+from ptn.missionalertbot.database.Commodities import commodities_all
 
 # local modules
 from ptn.missionalertbot.modules.DateString import get_formatted_date_string
@@ -52,6 +53,15 @@ carriers_table_create = '''
     )
     '''
 carriers_table_columns = ['p_ID', 'shortname', 'longname', 'cid', 'discordchannel', 'channelid', 'ownerid', 'lasttrade']
+
+# commodities table creation
+commodities_table_create = '''
+    CREATE TABLE commodities(
+        entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        commodity TEXT NOT NULL
+    )
+    '''
+commodities_table_columns = ['entry_id', 'commodity']
 
 webhooks_table_create = '''
     CREATE TABLE webhooks(
@@ -298,6 +308,7 @@ def build_database_on_startup():
     #       create (str): sql create statement for table
     database_table_map = {
         'carriers' : {'obj': carrier_db, 'create': carriers_table_create},
+        'commodities': {'obj': carrier_db, 'create': commodities_table_create},
         'webhooks' : {'obj': carrier_db, 'create': webhooks_table_create},
         'community_carriers': {'obj': carrier_db, 'create': community_carriers_table_create},
         'nominees': {'obj': carrier_db, 'create': nominees_table_create},
@@ -362,6 +373,21 @@ def build_database_on_startup():
         missions_conn.commit()
     except Exception as e:
         print(e)
+
+# populate commodities database on fresh install
+def populate_commodities_table_on_startup():
+    for commodity in commodities_all:
+        # Check if the commodity already exists in the table
+        carrier_db.execute("SELECT commodity FROM commodities WHERE commodity=?", (commodity,))
+        existing_entry = carrier_db.fetchone()
+
+        # If the commodity does not exist, insert it
+        if existing_entry is None:
+            carrier_db.execute("INSERT INTO commodities (commodity) VALUES (?)", (commodity,))
+
+    # Commit the changes to the database
+    carriers_conn.commit()
+
 
 
 """
@@ -863,4 +889,4 @@ async def find_commodity(mission_params, interaction):
     if commodity: # only if this is successful is returnflag set so mission gen will continue
         print(f"Found commodity {commodity.name}")
         mission_params.commodity_name = commodity.name
-    return
+    return commodity

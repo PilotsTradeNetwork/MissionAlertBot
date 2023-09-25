@@ -299,7 +299,11 @@ async def remove_carrier_channel(completed_mission_channel_id, seconds): # secon
                     raise EnvironmentError(f"Could not delete {delchannel}, reason: Bot does not have permission.")
                 except NotFound:
                     print("Channel appears to have been deleted by someone else, we'll just continue on.")
-                    await spamchannel.send(f"Channel {delchannel} could not be deleted because it doesn't exist.")
+                    embed = discord.Embed(
+                        description=f"Channel {delchannel} could not be deleted because it doesn't exist.",
+                        color=constants.EMBED_COLOUR_QU
+                    )
+                    await spamchannel.send(embed=embed)
     finally:
         try:
             # now release the channel lock

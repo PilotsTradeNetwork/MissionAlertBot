@@ -1,5 +1,17 @@
 # Changelog
 
+
+## 2.2.6
+- [#50](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/50) Logic to create commodities table from scratch
+- Logic to add new commodities
+- [#580](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/580) Check background tasks aren't running before starting them from `on_ready`
+- [#573](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/573) Prevent bots from being nominated for Community Pillar 
+
+
+## 2.2.5
+- More minor error/status report tidy-ups
+
+
 ## 2.2.4
 - [#554](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/554) Corrected time on mission generator channel lock alert.
 - [#556](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/556) Wine loads will no longer ping the BubbleWineLoader role even if the Select Menu is used to attempt to do so.
