@@ -11,6 +11,7 @@ from PIL import Image, ImageFont, ImageDraw
 import random
 import shutil
 import tempfile
+from time import strftime
 
 # import discord.py
 import discord
@@ -31,7 +32,7 @@ async def _overlay_reddit_mission_image(carrier_data):
     template:       the background image with logo, frame elements etc
     carrier_image:  the inset image optionally created by the Carrier Owner
     """
-    reddit_template = Image.open(os.path.join(constants.RESOURCE_PATH, mission_template_filename()))
+    reddit_template = Image.open(os.path.join(constants.RESOURCE_PATH, mission_template_filename(strftime('%B'))))
     carrier_image_filename = carrier_data.carrier_short_name + '.png'
     carrier_image = Image.open(os.path.join(constants.IMAGE_PATH, carrier_image_filename))
     reddit_template.paste(carrier_image, (47,13))
@@ -222,7 +223,7 @@ async def assign_carrier_image(interaction: discord.Interaction, lookname, origi
 
     elif not valid_image and not image_exists:
         # there's no mission image, prompt the user to upload one or use a PTN placeholder
-        file = discord.File(os.path.join(constants.RESOURCE_PATH, mission_template_filename()), filename="image.png")
+        file = discord.File(os.path.join(constants.RESOURCE_PATH, mission_template_filename(strftime('%B'))), filename="image.png")
         embed = discord.Embed(
             title=f"NO MISSION IMAGE FOUND",
             color=constants.EMBED_COLOUR_QU)

@@ -51,7 +51,7 @@ class ConfirmGrantRoleView(View):
             self.spam_embeds = []
             await self.member.add_roles(*self.roles)
             for role in self.roles:
-                embed, bot_spam_embed = role_granted_embed(interaction, self.member, role)
+                embed, bot_spam_embed = role_granted_embed(interaction, self.member, None, role)
                 self.embeds.append(embed)
                 self.spam_embeds.append(bot_spam_embed)
             if self.remove_roles:

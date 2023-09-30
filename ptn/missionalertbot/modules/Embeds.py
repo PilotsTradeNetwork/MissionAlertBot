@@ -7,6 +7,7 @@ STATUS: This file is complete, but needs to be imported into modules that use it
 # import libraries
 import os
 from datetime import timezone, datetime
+from time import strftime
 
 # import discord.py
 import discord
@@ -152,7 +153,7 @@ def verified_member_embed(message):
         description=desc,
         color=constants.EMBED_COLOUR_OK
     )
-    embed.set_thumbnail(url=ptn_logo_discord())
+    embed.set_thumbnail(url=ptn_logo_discord(strftime('%B')))
 
     return embed
 
@@ -167,12 +168,12 @@ def event_organiser_embed():
         description=desc,
         color=constants.EMBED_COLOUR_OK
     )
-    embed.set_thumbnail(url=ptn_logo_discord())
+    embed.set_thumbnail(url=ptn_logo_discord(strftime('%B')))
 
     return embed
 
 # embed to feedback that a user was granted a role
-def role_granted_embed(interaction, user, role):
+def role_granted_embed(interaction: discord.Interaction, user: discord.Member, message: discord.Message, role):
     print("Called role_granted_embed")
     desc = f"""
     ✅ Gave <@{user.id}> the <@&{role.id}> role.
@@ -189,7 +190,12 @@ def role_granted_embed(interaction, user, role):
         print("Command name not accessible")
         command_name = ""
 
-    desc = f"<@{interaction.user.id}> gave the <@&{role.id}> role to <@{user.id}>" + command_name
+    if message:
+        message_phrase = f" for {message.jump_url}"
+    else:
+        message_phrase = ""
+
+    desc = f"<@{interaction.user.id}> gave the <@&{role.id}> role to <@{user.id}>" + message_phrase + command_name
     bot_spam_embed = discord.Embed (
         description=desc,
         color=constants.EMBED_COLOUR_OK
@@ -258,3 +264,11 @@ def role_removed_embed(interaction, user, role):
 
     print("Returning embed")
     return embed, bot_spam_embed
+
+def dm_forbidden_embed(user: discord.Member):
+    print("Called dm_forbidden embed")
+    embed = discord.Embed(
+        description=f"↩ Skipped sending notification Direct Message to <@{user.id}>: user is not accepting DMs from this source.",
+        color=constants.EMBED_COLOUR_QU
+    )
+    return embed

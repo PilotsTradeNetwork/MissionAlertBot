@@ -9,6 +9,9 @@ Dependencies: constants
 # import local constants
 import ptn.missionalertbot.constants as constants
 
+# import local modules
+from ptn.missionalertbot.modules.DateString import get_formatted_date_string
+
 
 """
 TEXT GEN FUNCTIONS
@@ -30,9 +33,10 @@ def txt_create_discord(mission_params):
 
 
 def txt_create_reddit_title(mission_params):
+    elite_time = get_formatted_date_string()[0]
     reddit_title = (
         f"{mission_params.carrier_data.carrier_long_name} {mission_params.carrier_data.carrier_identifier} {mission_params.mission_type}ing "
-        f"{mission_params.commodity_name.upper()} in {mission_params.system.upper()} for {mission_params.profit}K/TON PROFIT"
+        f"{mission_params.commodity_name.upper()} in {mission_params.system.upper()} for {mission_params.profit}K/TON PROFIT ({elite_time})"
     )
     print("Defined reddit title text")
     return reddit_title

@@ -10,6 +10,7 @@ Dependencies: constants, database, helpers
 import aiohttp
 import asyncio
 import random
+from time import strftime
 
 # import discord.py
 import discord
@@ -29,6 +30,7 @@ from ptn.missionalertbot.constants import bot, bot_spam_channel, wine_alerts_loa
 from ptn.missionalertbot.database.database import backup_database, mission_db, missions_conn, find_carrier, CarrierDbFields
 from ptn.missionalertbot.modules.DateString import get_final_delete_hammertime, get_mission_delete_hammertime
 from ptn.missionalertbot.modules.helpers import lock_mission_channel, unlock_mission_channel, clean_up_pins, ChannelDefs, check_mission_channel_lock
+from ptn.missionalertbot.modules.ErrorHandler import GenericError, CustomError, on_generic_error
 
 
 """
@@ -141,7 +143,7 @@ async def _cleanup_completed_mission(interaction: discord.Interaction, mission_d
                                                                     f"{mission_params.commodity_name} from **{mission_params.station}** in **{mission_params.system}**.",
                                                         color=constants.EMBED_COLOUR_QU)
                                 embed.set_footer(text=f"Join {constants.DISCORD_INVITE_URL} for more trade opportunities.")
-                                embed.set_thumbnail(url=ptn_logo_discord())
+                                embed.set_thumbnail(url=ptn_logo_discord(strftime('%B')))
                                 await webhook_msg.remove_attachments(webhook_msg.attachments)
                                 await webhook_msg.edit(embed=embed)
 
@@ -221,110 +223,126 @@ async def _cleanup_completed_mission(interaction: discord.Interaction, mission_d
                 spamchannel.send(embed=embed)
 
     # remove channel
-    await remove_carrier_channel(mission_data.channel_id, seconds_long())
+    await remove_carrier_channel(interaction, mission_data.channel_id, seconds_long())
 
     return
 
 
-async def remove_carrier_channel(completed_mission_channel_id, seconds): # seconds is either 900 or 120 depending on scenario
-    # get channel ID to remove
-    delchannel = bot.get_channel(completed_mission_channel_id)
-    spamchannel = bot.get_channel(bot_spam_channel())
-
-    # start a timer
-    print(f"Starting {seconds} second countdown for deletion of {delchannel}")
-    await asyncio.sleep(seconds)
-    print("Channel removal timer complete")
-
+async def remove_carrier_channel(interaction: discord.Interaction, completed_mission_channel_id, seconds): # seconds is either 900 or 120 depending on scenario
     try:
-        # try to acquire a channel lock, if unsuccessful after a period of time, abort and throw up an error
+        # get channel ID to remove
+        delchannel = bot.get_channel(completed_mission_channel_id)
+        spamchannel = bot.get_channel(bot_spam_channel())
+
+        # start a timer
+        print(f"Starting {seconds} second countdown for deletion of {delchannel}")
+        await asyncio.sleep(seconds)
+        print("Channel removal timer complete")
+
         try:
-            await asyncio.wait_for(lock_mission_channel(delchannel.name), timeout=120)
-            embed = discord.Embed(
-                description=f"🔒 Lock acquired for `{delchannel.name}` (<#{delchannel.id}>) pending automatic deletion following conclusion of {seconds}-second timer.",
-                color=constants.EMBED_COLOUR_QU
+            # try to acquire a channel lock, if unsuccessful after a period of time, abort and throw up an error
+            try:
+                await asyncio.wait_for(lock_mission_channel(delchannel.name), timeout=120)
+                embed = discord.Embed(
+                    description=f"🔒 Lock acquired for `{delchannel.name}` (<#{delchannel.id}>) pending automatic deletion following conclusion of {seconds}-second timer.",
+                    color=constants.EMBED_COLOUR_QU
+                )
+                spamchannel = bot.get_channel(bot_spam_channel())
+                await spamchannel.send(embed=embed)
+            except asyncio.TimeoutError:
+                print(f"No channel lock available for {delchannel}")
+                return await spamchannel.send(f"<@211891698551226368> WARNING: No channel lock available on {delchannel} after 120 seconds. Deletion aborted.")
+
+            mission_gen_channel = bot.get_channel(mission_command_channel())
+            print(mission_gen_channel.name, mission_gen_channel.id)
+
+            hammertime = get_final_delete_hammertime()
+            print("Warning mission gen channel")
+            embed = discord.Embed (
+                title=":warning: Channel lock engaged for channel cleanup :warning:",
+                description=f"Deletion {hammertime} of <#{completed_mission_channel_id}>, channel will be temporarily locked.",
+                color=constants.EMBED_COLOUR_RP
             )
-            spamchannel = bot.get_channel(bot_spam_channel())
-            await spamchannel.send(embed=embed)
-        except asyncio.TimeoutError:
-            print(f"No channel lock available for {delchannel}")
-            return await spamchannel.send(f"<@211891698551226368> WARNING: No channel lock available on {delchannel} after 120 seconds. Deletion aborted.")
+            print("Sending warning message to mission gen")
+            warning = await mission_gen_channel.send(embed=embed)
 
-        mission_gen_channel = bot.get_channel(mission_command_channel())
-        print(mission_gen_channel.name, mission_gen_channel.id)
+            async with mission_gen_channel.typing():
 
-        hammertime = get_final_delete_hammertime()
-        print("Warning mission gen channel")
-        embed = discord.Embed (
-            title=":warning: Channel lock engaged for channel cleanup :warning:",
-            description=f"Deletion {hammertime} of <#{completed_mission_channel_id}>, channel will be temporarily locked.",
-            color=constants.EMBED_COLOUR_RP
-        )
-        print("Sending warning message to mission gen")
-        warning = await mission_gen_channel.send(embed=embed)
+                """
+                # this is clunky but we want to know if a channel lock is because it's about to be deleted
+                
+                global deletion_in_progress
+                deletion_in_progress = True
+                """
 
-        async with mission_gen_channel.typing():
+                # check whether channel is in-use for a new mission
+                mission_db.execute(f"SELECT * FROM missions WHERE "
+                                f"channelid = {completed_mission_channel_id}")
+                mission_data = MissionData(mission_db.fetchone())
+                print(f'Mission data from remove_carrier_channel: {mission_data}')
 
-            """
-            # this is clunky but we want to know if a channel lock is because it's about to be deleted
-            
-            global deletion_in_progress
-            deletion_in_progress = True
-            """
-
-            # check whether channel is in-use for a new mission
-            mission_db.execute(f"SELECT * FROM missions WHERE "
-                            f"channelid = {completed_mission_channel_id}")
-            mission_data = MissionData(mission_db.fetchone())
-            print(f'Mission data from remove_carrier_channel: {mission_data}')
-
-            if mission_data:
-                # abort abort abort
-                print(f'New mission underway in this channel, aborting removal')
-            else:
-                print(f"Proceeding with channel deletion for {delchannel.name}")
-                # delete channel after a parting gift
-                gif = random.choice(constants.boom_gifs)
-                try:
-                    await delchannel.send(gif)
-                    await asyncio.sleep(seconds_very_short())
-                    await delchannel.delete()
-                    print(f'Deleted {delchannel}')
+                if mission_data:
+                    # abort abort abort
+                    print(f'New mission underway in this channel, aborting removal')
+                else:
+                    print(f"Proceeding with channel deletion for {delchannel.name}")
+                    # delete channel after a parting gift
+                    gif = random.choice(constants.boom_gifs)
+                    try:
+                        await delchannel.send(gif)
+                        await asyncio.sleep(seconds_very_short())
+                        await delchannel.delete()
+                        print(f'Deleted {delchannel}')
+                        embed = discord.Embed(
+                            description=f":put_litter_in_its_place: Deleted expired mission channel {delchannel.name}.",
+                            color=constants.EMBED_COLOUR_OK
+                        )
+                        await spamchannel.send(embed=embed)
+                    except Forbidden:
+                        raise EnvironmentError(f"Could not delete {delchannel}, reason: Bot does not have permission.")
+                    except NotFound:
+                        print("Channel appears to have been deleted by someone else, we'll just continue on.")
+                        embed = discord.Embed(
+                            description=f"Channel {delchannel} could not be deleted because it doesn't exist.",
+                            color=constants.EMBED_COLOUR_QU
+                        )
+                        await spamchannel.send(embed=embed)
+        finally:
+            try:
+                # now release the channel lock
+                print("Releasing channel lock...")
+                locked = check_mission_channel_lock(delchannel.name)
+                if locked:
+                    await unlock_mission_channel(delchannel.name)
+                    print("Channel lock released")
                     embed = discord.Embed(
-                        description=f":put_litter_in_its_place: Deleted expired mission channel {delchannel.name}.",
+                        description=f"🔓 Released lock for `{delchannel.name}` (<#{delchannel.id}>) ",
                         color=constants.EMBED_COLOUR_OK
                     )
                     await spamchannel.send(embed=embed)
-                except Forbidden:
-                    raise EnvironmentError(f"Could not delete {delchannel}, reason: Bot does not have permission.")
-                except NotFound:
-                    print("Channel appears to have been deleted by someone else, we'll just continue on.")
-                    embed = discord.Embed(
-                        description=f"Channel {delchannel} could not be deleted because it doesn't exist.",
-                        color=constants.EMBED_COLOUR_QU
-                    )
-                    await spamchannel.send(embed=embed)
-    finally:
+            except Exception as e:
+                print(e)
+            try: 
+                print("Deleting warning message, if exists")
+                await warning.delete()
+            except Exception as e:
+                print(e)
+            return
+
+    except Exception as e:
         try:
-            # now release the channel lock
-            print("Releasing channel lock...")
-            locked = check_mission_channel_lock(delchannel.name)
-            if locked:
-                await unlock_mission_channel(delchannel.name)
-                print("Channel lock released")
+            error = f"Unable to delete carrier channel: {e}"
+            raise CustomError(error)
+        except Exception as e:
+            try: # some methods of calling this function won't have a valid interaction object to parse
+                await on_generic_error(interaction, e)
+            except:
+                print(f"Error deleting carrier channel: {e}")
                 embed = discord.Embed(
-                    description=f"🔓 Released lock for `{delchannel.name}` (<#{delchannel.id}>) ",
-                    color=constants.EMBED_COLOUR_OK
+                    description=f"❌ Error deleting carrier channel for `{delchannel.name}` (<#{delchannel.id}>:\n{e})",
+                    color=constants.EMBED_COLOUR_ERROR
                 )
                 await spamchannel.send(embed=embed)
-        except Exception as e:
-            print(e)
-        try: 
-            print("Deleting warning message, if exists")
-            await warning.delete()
-        except Exception as e:
-            print(e)
-        return
 
 
 async def check_trade_channels_on_startup():
@@ -358,7 +376,7 @@ async def check_trade_channels_on_startup():
             await spamchannel.send(embed=embed)
             print(f"{channel.name} appears orphaned, marking for cleanup")
             # Append the channel deletion task to the list without awaiting it
-            deletion_task = remove_carrier_channel(channel.id, seconds_long())
+            deletion_task = remove_carrier_channel(None, channel.id, seconds_long())
             deletion_tasks.append(deletion_task)
 
     # Wait for all deletion tasks to complete concurrently

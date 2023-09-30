@@ -9,6 +9,7 @@ import emoji
 
 # import discord.py
 import discord
+from discord import Forbidden
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import View, Button
@@ -29,7 +30,7 @@ from ptn.missionalertbot.modules.helpers import check_roles, _regex_alphanumeric
     _cc_create_channel, _cc_role_create, _cc_assign_permissions, _cc_db_enter, _remove_cc_role_from_owner, _cc_role_delete, _openclose_community_channel, \
     _send_notice_channel_check, check_command_channel
 from ptn.missionalertbot.modules.Embeds import _generate_cc_notice_embed, verified_member_embed, event_organiser_embed, role_granted_embed, role_already_embed, \
-    confirm_remove_role_embed
+    confirm_remove_role_embed, dm_forbidden_embed
 
 
 """
@@ -75,14 +76,19 @@ async def verify_member(interaction:  discord.Interaction, message: discord.Mess
             await message.add_reaction(fc_complete_reaction)
             
             # feed back to the command user
-            embed, bot_spam_embed = role_granted_embed(interaction, member, vm_role)
+            embed, bot_spam_embed = role_granted_embed(interaction, member, message, vm_role)
             await interaction.edit_original_response(embed=embed)
             await spamchannel.send(embed=bot_spam_embed)
 
-            # dm the target user
-            print("Notifying target user")
-            embed = verified_member_embed(message)
-            await member.send(embed=embed)
+            try:
+                # dm the target user
+                print("Notifying target user")
+                embed = verified_member_embed(message)
+                await member.send(embed=embed)
+            except Forbidden:
+                print(f"Couldn't message {member}- DMs are blocked (403 Forbidden).")
+                embed = dm_forbidden_embed(member)
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             try:
@@ -123,14 +129,19 @@ async def toggle_event_organiser(interaction:  discord.Interaction, member: disc
             await member.add_roles(eo_role)
          
             # feed back to the command user
-            embed, bot_spam_embed = role_granted_embed(interaction, member, eo_role)
+            embed, bot_spam_embed = role_granted_embed(interaction, member, None, eo_role)
             await interaction.edit_original_response(embed=embed)
             await spamchannel.send(embed=bot_spam_embed)
 
-            # dm the target user
-            print("Notifying target user")
-            embed = event_organiser_embed()
-            await member.send(embed=embed)
+            try:
+                # dm the target user
+                print("Notifying target user")
+                embed = event_organiser_embed()
+                await member.send(embed=embed)
+            except Forbidden:
+                print(f"Couldn't message {member}- DMs are blocked (403 Forbidden).")
+                embed = dm_forbidden_embed(member)
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             try:
@@ -359,7 +370,13 @@ class CTeamCommands(commands.Cog):
 
         # add a note in bot_spam
         spamchannel = bot.get_channel(bot_spam_channel())
-        await spamchannel.send(f"{interaction.user} used `/create_community_channel` in <#{interaction.channel.id}> to add {owner.display_name} as a Community channel owner with channel <#{new_channel.id}>")
+
+        embed = discord.Embed(
+            description=f"{interaction.user} used `/create_community_channel` in <#{interaction.channel.id}> to add {owner.display_name} as a Community channel owner with channel <#{new_channel.id}>",
+            color=constants.EMBED_COLOUR_OK
+        )
+
+        await spamchannel.send(embed=embed)
 
         return
 
@@ -408,7 +425,13 @@ class CTeamCommands(commands.Cog):
 
         # add a note in bot_spam
         spamchannel = bot.get_channel(bot_spam_channel())
-        await spamchannel.send(f"{interaction.user} used `/restore_community_channel` in <#{interaction.channel.id}> and granted ownership to {owner.display_name}.")
+
+        embed = discord.Embed(
+            description=f"{interaction.user} used `/restore_community_channel` in <#{interaction.channel.id}> and granted ownership to {owner.display_name}.",
+            color=constants.EMBED_COLOUR_OK
+        )
+
+        await spamchannel.send(embed=embed)
 
         return
 

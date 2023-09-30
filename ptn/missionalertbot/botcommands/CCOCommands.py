@@ -75,7 +75,7 @@ async def toggle_cco_trainee(interaction:  discord.Interaction, member: discord.
             await member.add_roles(cco_trainee_role_object)
          
             # feed back to the command user
-            embed, bot_spam_embed = role_granted_embed(interaction, member, cco_trainee_role_object)
+            embed, bot_spam_embed = role_granted_embed(interaction, member, None, cco_trainee_role_object)
             await interaction.edit_original_response(embed=embed)
             await spamchannel.send(embed=bot_spam_embed)
 
@@ -154,12 +154,28 @@ async def cco_mission_complete(interaction, carrier, is_complete, message):
     print(f'Request received from {interaction.user.display_name} to mark the mission of {carrier} as done from channel: '
         f'{current_channel}')
 
+    # resolve the carrier from the carriers db
+    carrier_data = find_carrier(carrier, CarrierDbFields.longname.name)
+    if not carrier_data:  # error condition
+        try:
+            error = f"No carrier found for '**{carrier}**.'"
+            raise CustomError(error)
+        except Exception as e:
+            await on_generic_error(interaction, e)
+            return
+
     try:
-        mission_data = find_mission(carrier, "carrier")
+        mission_data = find_mission(carrier_data.carrier_long_name, "carrier")
         if not mission_data:
-            raise CustomError(f"No trade missions found for carriers matching `{carrier}`")
-    except CustomError as e:
-        return await on_generic_error(interaction, e)
+            try:
+                raise CustomError(f"Search term `{carrier}` resolved to **{carrier_data.carrier_long_name}** but this carrier does not appear to have an active mission.")
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+    except Exception as e:
+        try:
+            raise GenericError(e)
+        except Exception as e:
+            return await on_generic_error(interaction, e)
 
     else:
         embed = discord.Embed(

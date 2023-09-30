@@ -14,7 +14,10 @@ import os
 import pickle
 from PIL import Image
 import random
+import traceback
 import typing
+from time import strftime
+
 
 # import discord.py
 import discord
@@ -30,7 +33,8 @@ from ptn.missionalertbot.classes.MissionParams import MissionParams
 # import local constants
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, get_reddit, seconds_short, upvote_emoji, hauler_role, trainee_role, \
-    get_guild, get_overwrite_perms, ptn_logo_discord, wineloader_role, o7_emoji, bot_spam_channel, discord_emoji, training_cat, trade_cat
+    get_guild, get_overwrite_perms, ptn_logo_discord, wineloader_role, o7_emoji, bot_spam_channel, discord_emoji, training_cat, trade_cat, \
+    reddit_timeout
 
 # import local modules
 from ptn.missionalertbot.database.database import backup_database, mission_db, missions_conn, find_carrier, CarrierDbFields, \
@@ -439,7 +443,8 @@ async def return_discord_channel_embeds(mission_params):
     # generates embeds used for the PTN carrier channel as well as any webhooks
 
     # define owner avatar
-    owner = await bot.fetch_user(mission_params.carrier_data.ownerid)
+    guild: discord.Guild = await get_guild()
+    owner: discord.Member = guild.get_member(mission_params.carrier_data.ownerid)
     owner_name = owner.display_name
     owner_avatar = owner.display_avatar
     pads = "**LARGE**" if 'l' in mission_params.pads.lower() else "**MEDIUM**"
@@ -459,7 +464,7 @@ async def return_discord_channel_embeds(mission_params):
                          f"\n💰 Profit: **{mission_params.profit}K PER TON**" \
                          f"\n📥 Demand: **{mission_params.demand}K TONS**"
         
-        sell_thumb = ptn_logo_discord()
+        sell_thumb = ptn_logo_discord(strftime('%B'))
 
         embed_colour = constants.EMBED_COLOUR_LOADING
 
@@ -467,14 +472,14 @@ async def return_discord_channel_embeds(mission_params):
         buy_description=f"🎯 Fleet Carrier: **{mission_params.carrier_data.carrier_long_name}**" \
                         f"\n🔢 Carrier ID: **{mission_params.carrier_data.carrier_identifier}**" \
                         f"\n🌟 System: **{mission_params.system.upper()}**" \
-                        f"\n📦 Commodity: **{mission_params.commodity_name.upper()}**"
+                        f"\n📦 Commodity: **{mission_params.commodity_name.upper()}**" \
+                         f"\n📤 Supply: **{mission_params.demand}K TONS**"
 
-        buy_thumb = ptn_logo_discord()
+        buy_thumb = ptn_logo_discord(strftime('%B'))
 
         sell_description=f"📌 Station: **{mission_params.station.upper()}**" \
                          f"\n🛬 Landing Pad: {pads}" \
                          f"\n💰 Profit: **{mission_params.profit}K PER TON**" \
-                         f"\n📥 Demand: **{mission_params.demand}K TONS**"
         
         sell_thumb = constants.ICON_SELL
 
@@ -687,20 +692,85 @@ async def send_mission_to_subreddit(interaction, mission_params):
     if not mission_params.reddit_title: await define_reddit_texts(mission_params)
 
     try:
-
         # post to reddit
+        print("Defining Reddit elements")
         reddit = await get_reddit()
         subreddit = await reddit.subreddit(mission_params.channel_defs.sub_reddit_actual)
-        submission = await subreddit.submit_image(mission_params.reddit_title, image_path=mission_params.reddit_img_name,
-                                                flair_id=mission_params.channel_defs.reddit_flair_in_progress)
+        try:
+            async def _post_submission_to_reddit():
+                print("⏳ Attempting Reddit post...")
+                await subreddit.submit_image(mission_params.reddit_title, image_path=mission_params.reddit_img_name,
+                                                flair_id=mission_params.channel_defs.reddit_flair_in_progress,
+                                                without_websockets=True) # temporary ? workaround for PRAW error
+                return
+                
+            await asyncio.wait_for(_post_submission_to_reddit(), timeout=reddit_timeout())
+
+        except TimeoutError: # TODO move to error handler
+            print("❌ Reddit post send timed out")
+            reddit_error_embed = discord.Embed(
+                description=f"❌ Timed out while trying to send to Reddit.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            reddit_error_embed.set_footer(text="Attempting to continue with other sends.")
+            await interaction.channel.send(embed=reddit_error_embed)
+        except Exception as e:
+            print(f"❌ Error posting to Reddit: {e}")
+            traceback.print_exc()
+
+        try:
+            print("⏳ Attempting to retrieve Reddit post...") 
+            async def _get_new_reddit_post(): # temporary ? workaround for PRAW error
+                submission = None
+                while True:
+                    async for new_post in subreddit.new():
+                        print(f"⏳ Testing submission {new_post}")
+                        if new_post.title == mission_params.reddit_title:
+                            print(f'✅ Found the matching submission: {new_post.title}')
+                            submission = new_post
+                            break
+                    if submission:
+                        break
+                    await asyncio.sleep(5)  # how long to wait before trying again
+                return submission
+
+            submission = await asyncio.wait_for(_get_new_reddit_post(), timeout=reddit_timeout())
+
+        except TimeoutError: # TODO move to error handler
+            print("❌ Reddit post retrieval timed out")
+            reddit_error_embed = discord.Embed(
+                description=f"❌ Timed out while trying to send to Reddit.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            reddit_error_embed.set_footer(text="Attempting to continue with other sends.")
+            await interaction.channel.send(embed=reddit_error_embed)
+
+
         mission_params.reddit_post_url = submission.permalink
         mission_params.reddit_post_id = submission.id
-        if mission_params.cco_message_text:
-            comment = await submission.reply(f"> {mission_params.cco_message_text}\n\n&#x200B;\n\n{mission_params.reddit_body}")
-        else:
-            comment = await submission.reply(mission_params.reddit_body)
-        mission_params.reddit_comment_url = comment.permalink
-        mission_params.reddit_comment_id = comment.id
+
+        try:
+            async def post_comment_to_reddit():
+                print("⏳ Attempting to reply to Reddit post...")
+                if mission_params.cco_message_text:
+                    comment = await submission.reply(f"> {mission_params.cco_message_text}\n\n&#x200B;\n\n{mission_params.reddit_body}")
+                else:
+                    comment = await submission.reply(mission_params.reddit_body)
+                mission_params.reddit_comment_url = comment.permalink
+                mission_params.reddit_comment_id = comment.id
+                print(f"✅ Submitted Reddit comment {comment}")
+
+            await asyncio.wait_for(post_comment_to_reddit(), timeout=reddit_timeout())
+
+        except Exception as e:
+            print(f"❌ Reddit comment post failed: {e}")
+            reddit_error_embed = discord.Embed(
+                description=f"❌ Couldn't reply to Reddit post with trade details.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            reddit_error_embed.set_footer(text="Attempting to continue with other sends.")
+            await interaction.channel.send(embed=reddit_error_embed)
+
         embed = discord.Embed(
             title=f"Reddit trade alert sent for {mission_params.carrier_data.carrier_long_name}",
             description=f"https://www.reddit.com{mission_params.reddit_post_url}",
@@ -718,6 +788,7 @@ async def send_mission_to_subreddit(interaction, mission_params):
         return
     except Exception as e:
         print(f"Error posting to Reddit: {e}")
+        traceback.print_exc()
         reddit_error_embed = discord.Embed(
             description=f"❌ Could not send to Reddit. {e}",
             color=constants.EMBED_COLOUR_ERROR
@@ -1046,7 +1117,7 @@ async def prepare_for_gen_mission(interaction: discord.Interaction, mission_para
 
 
 # mission generator called by loading/unloading commands
-async def gen_mission(interaction: discord.Interaction, mission_params):
+async def gen_mission(interaction: discord.Interaction, mission_params: MissionParams):
     # generate a timestamp for mission creation
     mission_params.timestamp = get_formatted_date_string()[2]
 
@@ -1092,7 +1163,7 @@ async def gen_mission(interaction: discord.Interaction, mission_params):
                 if not submit_mission: # error condition, cleanup after ourselves
                     cleanup_temp_image_file(mission_params.discord_img_name)
                     if mission_params.mission_temp_channel_id:
-                        await remove_carrier_channel(mission_params.mission_temp_channel_id, seconds_short)
+                        await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short)
 
             if "r" in mission_params.sendflags and not mission_params.edmc_off: # send to subreddit
                 async with interaction.channel.typing():
@@ -1186,7 +1257,7 @@ async def gen_mission(interaction: discord.Interaction, mission_params):
         except Exception as e:
             print(e)
         if mission_params.mission_temp_channel_id:
-            await remove_carrier_channel(mission_params.mission_temp_channel_id, seconds_short)
+            await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short)
 
 
 async def create_mission_temp_channel(interaction, mission_params):

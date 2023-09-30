@@ -15,7 +15,6 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from PIL import ImageFont
-from time import strftime
 
 
 # Define whether the bot is in testing or live mode. Default is testing mode.
@@ -99,11 +98,14 @@ PROD_MOD_ROLE = 813814494563401780 # Mod role ID on Live
 PROD_VERIFIED_ROLE = 867820916331118622 # Verified Member
 PROD_EVENT_ORGANISER_ROLE = 1023296182639939594 # Event Organiser
 PROD_BOT_ROLE = 802523214809923596 # General Bot role on live (Robot Overlords)
+PROD_ALUM_ROLE = 1086777372981858404 # Council Alumni role on live
 PROD_TRADE_CAT = 801558838414409738 # Trade Carrier category on live server
 PROD_ARCHIVE_CAT = 1048957416781393970 # Archive category on live server
 PROD_SECONDS_VERY_SHORT = 10 # time between channel deletion trigger and actual deletion (10)
 PROD_SECONDS_SHORT = 120 # time before calling channel cleanup on failed mission gen (120)
 PROD_SECONDS_LONG = 900 # time before calling channel cleanup on successful mission closure (900)
+PROD_REDDIT_TIMEOUT = 30 # time before giving up on Reddit posting
+PROD_MCOMPLETE_ID = 849040914948554764 # /mission complete slash ID
 # Training mode - production
 PROD_TRAINING_CATEGORY = 1120269131476901938 # training mode category ID
 PROD_TRAINING_MISSION_COMMAND_CHANNEL = 1120269354949419030 # training mode mission gen channel ID
@@ -152,11 +154,14 @@ TEST_DEV_ROLE = 1048913812163678278 # Dev role ID on test
 TEST_VERIFIED_ROLE = 903289848427851847 # Verified Member
 TEST_EVENT_ORGANISER_ROLE = 1121748430650355822 # Event Organiser
 TEST_BOT_ROLE = 842524877051133963 # TestingAlertBot role only - need a generic bot role on test
+TEST_ALUM_ROLE = 1156729563188035664 # Alumni role on test server
 TEST_TRADE_CAT = 876569219259580436 # Trade Carrier category on live server
 TEST_ARCHIVE_CAT = 877244591579992144 # Archive category on live server
 TEST_SECONDS_VERY_SHORT = 10 # time between channel deletion trigger and actual deletion
 TEST_SECONDS_SHORT = 5 # time before calling channel cleanup on failed mission gen
 TEST_SECONDS_LONG = 10 # time before calling channel cleanup on successful mission closure
+TEST_REDDIT_TIMEOUT = 10 # time before giving up on Reddit posting
+TEST_MCOMPLETE_ID = 1119206091163709441 # /mission complete slash ID
 # Training mode - test
 TEST_TRAINING_CATEGORY = 1120268080912810014 # training mode category ID
 TEST_TRAINING_MISSION_COMMAND_CHANNEL = 1120268484455174215 # training mode mission gen channel ID
@@ -254,7 +259,6 @@ shush_gifs = [
     'https://media.tenor.com/PgAtcM06qBQAAAAC/secret-lover.gif' # it's our secret wink
 ]
 
-current_month = strftime('%B')
 
 # logo URLs from website
 PTN_LOGO_DARK_TEXT_TRANSPARENT = 'https://pilotstradenetwork.com/wp-content/uploads/2021/08/PTN_Dark_wText.png'
@@ -263,17 +267,17 @@ PTN_LOGO_PRIDE_TEXT_TRANSPARENT = 'https://pilotstradenetwork.com/wp-content/upl
 PTN_LOGO_DISCORD_BG = 'https://pilotstradenetwork.com/wp-content/uploads/2021/08/PTN_Discord_Icon.png'
 PTN_LOGO_DISCORD_BG_PRIDE = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/discord-logo-pride-2023-cropped.png'
 
-def ptn_logo_full():
+def ptn_logo_full(current_month):
   return PTN_LOGO_PRIDE_TEXT_TRANSPARENT if current_month == 'June' else PTN_LOGO_DARK_TEXT_TRANSPARENT
 
-def ptn_logo_discord():
+def ptn_logo_discord(current_month):
   return PTN_LOGO_DISCORD_BG_PRIDE if current_month == 'June' else PTN_LOGO_DISCORD_BG
 
 # mission template filenames
 reddit_template = 'reddit_template.png'
 reddit_template_pride = 'reddit_template_pride.png'
 
-def mission_template_filename():
+def mission_template_filename(current_month):
   return reddit_template_pride if current_month == 'June' else reddit_template
 
 DISCORD_TEMPLATE = 'discord_template.png'
@@ -418,6 +422,9 @@ def event_organiser_role():
 def bot_role():
   return PROD_BOT_ROLE if _production else TEST_BOT_ROLE
 
+def alum_role():
+    return PROD_ALUM_ROLE if _production else TEST_ALUM_ROLE
+
 def trade_cat():
   return PROD_TRADE_CAT if _production else TEST_TRADE_CAT
 
@@ -432,6 +439,13 @@ def seconds_short():
 
 def seconds_long():
   return PROD_SECONDS_LONG if _production else TEST_SECONDS_LONG
+
+def reddit_timeout():
+  return PROD_REDDIT_TIMEOUT if _production else TEST_REDDIT_TIMEOUT
+
+def mcomplete_id():
+  return PROD_MCOMPLETE_ID if _production else TEST_MCOMPLETE_ID
+
 
 def training_cat():
   return PROD_TRAINING_CATEGORY if _production else TEST_TRAINING_CATEGORY
@@ -456,7 +470,6 @@ def training_reddit_in_progress():
   
 def training_reddit_completed():
   return TEST_FLAIR_MISSION_STOP # presently using the testing subreddit for training purposes
-
 
 
 

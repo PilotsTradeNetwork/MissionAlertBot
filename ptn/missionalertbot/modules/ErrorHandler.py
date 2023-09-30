@@ -24,14 +24,12 @@ class CommandChannelError(app_commands.CheckFailure): # channel check error
         super().__init__(permitted_channel, formatted_channel_list, "Channel check error raised")
     pass
 
-
 class CommandRoleError(app_commands.CheckFailure): # role check error
     def __init__(self, permitted_roles, formatted_role_list):
         self.permitted_roles = permitted_roles
         self.formatted_role_list = formatted_role_list
         super().__init__(permitted_roles, formatted_role_list, "Role check error raised")
     pass
-
 
 class GenericError(Exception): # generic error
     pass

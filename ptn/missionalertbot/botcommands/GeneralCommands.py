@@ -22,7 +22,7 @@ from ptn.missionalertbot.classes.Views import MissionCompleteView
 from ptn.missionalertbot._metadata import __version__
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, bot_command_channel, bot_dev_channel, cmentor_role, certcarrier_role, \
-    admin_role, dev_role, trade_alerts_channel, mod_role, cpillar_role, bot_spam_channel, bot_role
+    admin_role, dev_role, trade_alerts_channel, mod_role, cpillar_role, bot_spam_channel, bot_role, mcomplete_id, alum_role
 
 # local modules
 from ptn.missionalertbot.database.database import backup_database, find_carrier, find_mission, _is_carrier_channel, \
@@ -333,7 +333,7 @@ class GeneralCommands(commands.Cog):
     @commands.command(name='complete', help="Deprecated, do not use.")
     async def mcomplete(self, ctx):
         embed = discord.Embed(
-            description="Deprecated. Please use `/mission complete` instead!",
+            description=f"Deprecated. Please use </mission complete:{mcomplete_id()}> instead!",
             color=constants.EMBED_COLOUR_ERROR
         )
         embed.set_image(url='https://pilotstradenetwork.com/wp-content/uploads/2023/06/hm-upgrades.gif')
@@ -507,12 +507,12 @@ class GeneralCommands(commands.Cog):
             return await interaction.response.send_message("You can't nominate yourself! But congrats on the positive self-esteem :)", ephemeral=True)
 
         #Skip nominating Cpillar|Cmentor|Council|Mod|Bot
-        for avoid_role in [cpillar_role(), cmentor_role(), admin_role(), mod_role(), bot_role()]:
+        for avoid_role in [cpillar_role(), cmentor_role(), admin_role(), mod_role(), bot_role(), alum_role()]:
             if user.get_role(avoid_role):
-                print(f"{interaction.user} tried to nominate a Cpillar|Cmentor|Council|Mod : {user.name}")
+                print(f"{interaction.user} tried to nominate a Cpillar|Cmentor|Council|Mod|Council Alumni: {user.name}")
                 return await interaction.response.send_message(
                     (f"You can't nominate an existing <@&{cpillar_role()}>,"
-                    f" <@&{cmentor_role()}>, <@&{admin_role()}>, <@&{mod_role()}> or bot."
+                    f" <@&{cmentor_role()}>, a <@&{admin_role()}>, <@&{mod_role()}>, <@&{alum_role()}> or bot."
                     " But we appreciate your nomination attempt!"),
                     ephemeral=True)
 
