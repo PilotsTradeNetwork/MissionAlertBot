@@ -1179,7 +1179,7 @@ async def prepare_for_gen_mission(interaction: discord.Interaction, mission_para
         winechannel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
         role_to_check = discord.utils.get(interaction.guild.roles, id=pilot_role())
         print(f"⏳ Checking permissions for role {role_to_check}")
-        mission_params.booze_cruise = winechannel.permissions_for(interaction.guild.default_role).view_channel
+        mission_params.booze_cruise = winechannel.permissions_for(role_to_check).view_channel
         print(f"▶ BC status: {mission_params.booze_cruise}")
         # this only returns true if commodity is wine AND the BC channels are open, otherwise it is false
 
