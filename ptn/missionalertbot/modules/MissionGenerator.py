@@ -34,7 +34,7 @@ from ptn.missionalertbot.classes.MissionParams import MissionParams
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, get_reddit, seconds_short, upvote_emoji, hauler_role, trainee_role, reddit_timeout, \
     get_guild, get_overwrite_perms, ptn_logo_discord, wineloader_role, o7_emoji, bot_spam_channel, discord_emoji, training_cat, \
-    trade_cat, mcomplete_id, somm_role
+    trade_cat, mcomplete_id, somm_role, pilot_role
 
 # import local modules
 from ptn.missionalertbot.database.database import backup_database, mission_db, missions_conn, find_carrier, CarrierDbFields, \
@@ -1175,8 +1175,12 @@ async def prepare_for_gen_mission(interaction: discord.Interaction, mission_para
     print(f"define_commodity returnflag status: {mission_params.returnflag}")
 
     if mission_params.commodity_name.title() == 'Wine':
+        print(f"⏳ Wine load detected, checking BC status by permissions for {mission_params.channel_defs.wine_loading_channel_actual}")
         winechannel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
+        role_to_check = discord.utils.get(interaction.guild.roles, id=pilot_role())
+        print(f"⏳ Checking permissions for role {role_to_check}")
         mission_params.booze_cruise = winechannel.permissions_for(interaction.guild.default_role).view_channel
+        print(f"▶ BC status: {mission_params.booze_cruise}")
         # this only returns true if commodity is wine AND the BC channels are open, otherwise it is false
 
     # add any webhooks to mission_params

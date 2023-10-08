@@ -98,6 +98,7 @@ PROD_DEV_ROLE = 812988180210909214 # Developer role ID on live
 PROD_MOD_ROLE = 813814494563401780 # Mod role ID on Live
 PROD_SOMM_ROLE = 838520893181263872 # Sommelier role ID on live
 PROD_VERIFIED_ROLE = 867820916331118622 # Verified Member
+PROD_PILOT_ROLE = 800396412217982999 # Pilot role
 PROD_EVENT_ORGANISER_ROLE = 1023296182639939594 # Event Organiser
 PROD_BOT_ROLE = 802523214809923596 # General Bot role on live (Robot Overlords)
 PROD_ALUM_ROLE = 1086777372981858404 # Council Alumni role on live
@@ -156,6 +157,7 @@ TEST_RECRUIT_ROLE = 1121916871088803871 # CCO Recruit role
 TEST_CPILLAR_ROLE = 903289927184314388 # Community Pillar role on test server
 TEST_DEV_ROLE = 1048913812163678278 # Dev role ID on test
 TEST_VERIFIED_ROLE = 903289848427851847 # Verified Member
+TEST_PILOT_ROLE = 818174614810787840 # Pilot role
 TEST_EVENT_ORGANISER_ROLE = 1121748430650355822 # Event Organiser
 TEST_BOT_ROLE = 842524877051133963 # TestingAlertBot role only - need a generic bot role on test
 TEST_ALUM_ROLE = 1156729563188035664 # Alumni role on test server
@@ -428,6 +430,9 @@ def dev_role():
 
 def verified_role():
   return PROD_VERIFIED_ROLE if _production else TEST_VERIFIED_ROLE
+
+def pilot_role():
+  return PROD_PILOT_ROLE if _production else TEST_PILOT_ROLE
 
 def event_organiser_role():
   return PROD_EVENT_ORGANISER_ROLE if _production else TEST_EVENT_ORGANISER_ROLE

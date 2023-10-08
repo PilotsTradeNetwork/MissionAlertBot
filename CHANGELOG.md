@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.1
+- Fix for BC status not being detected on Live server
+
+
 ## 2.3.0
 New commands:
 - [#579](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/579) `/cco active` - toggles Active status for CCOs; CCOs set to active this way will not have the role removed for at least 28 days. Permissions: CCO, Fleet Reserve.
