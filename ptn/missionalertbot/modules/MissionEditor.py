@@ -19,22 +19,27 @@ from discord.ui import View, Modal
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, bot_spam_channel, get_reddit, upvote_emoji, wineloader_role, hauler_role
 
+# import local classes
+from ptn.missionalertbot.classes.MissionParams import MissionParams
+
 # import local modules
 from ptn.missionalertbot.database.database import _update_mission_in_database
 from ptn.missionalertbot.modules.ImageHandling import create_carrier_reddit_mission_image, create_carrier_discord_mission_image
 from ptn.missionalertbot.modules.MissionGenerator import validate_pads, validate_profit, define_commodity, return_discord_alert_embed, return_discord_channel_embeds, \
-    _mission_summary_embed, mission_generation_complete, cleanup_temp_image_file
+    _mission_summary_embed, mission_generation_complete, cleanup_temp_image_file, send_discord_alert, send_discord_channel_message
 from ptn.missionalertbot.modules.TextGen import txt_create_discord, txt_create_reddit_title, txt_create_reddit_body
+from ptn.missionalertbot.modules.ErrorHandler import on_generic_error, CustomError, GenericError
 
 
 class EditConfirmView(View):
     def __init__(self, mission_params, original_type, confirm_embed, author: typing.Union[discord.Member, discord.User], timeout=300):
-        self.spamchannel = bot.get_channel(bot_spam_channel())
+        self.spamchannel: discord.TextChannel = bot.get_channel(bot_spam_channel())
         self.confirm_embed = confirm_embed
         self.author = author
         self.original_type = original_type
-        self.mission_params = mission_params
+        self.mission_params: MissionParams = mission_params
         super().__init__(timeout=timeout)
+        self.message_button.style=discord.ButtonStyle.primary if self.mission_params.cco_message_text else discord.ButtonStyle.secondary
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success, emoji="📢", custom_id="confirm")
     async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -86,7 +91,7 @@ class EditConfirmView(View):
     async def message_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         print(f"{interaction.user.display_name} wants to add a message to their mission")
     
-        await interaction.response.send_modal(AddMessageModal(self.mission_params, self.confirm_embed, view=self))
+        await interaction.response.send_modal(AddMessageModal(self.mission_params, self.original_type, self.confirm_embed, self.author))
 
     @discord.ui.button(label="Remove Message", style=discord.ButtonStyle.secondary, emoji="🗑", custom_id="remove", row=2)
     async def remove_message_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -164,44 +169,56 @@ class EditConfirmView(View):
 
 # modal for message button
 class AddMessageModal(Modal):
-    def __init__(self, mission_params, confirm_embed, view, title = 'Add message to mission', timeout = None) -> None:
+    def __init__(self, mission_params, original_type, confirm_embed, author, title = 'Add message to mission', timeout = None) -> None:
+        self.mission_params: MissionParams = mission_params
+        self.original_type = original_type
         self.confirm_embed = confirm_embed
-        self.mission_params = mission_params
-        self.view = view
+        self.author = author
+        self.message.default = self.mission_params.cco_message_text if self.mission_params.cco_message_text else None
         super().__init__(title=title, timeout=timeout)
 
     message = discord.ui.TextInput(
         label='Enter your message below.',
         style=discord.TextStyle.long,
         placeholder='Normal Discord markdown works, but mentions and custom emojis require full code.',
-        required=True,
+        required=False,
         max_length=4000,
     )
 
     async def on_submit(self, interaction: discord.Interaction):
         print("Message submitted")
         print(self.message.value)
-        self.mission_params.cco_message_text = self.message.value
-        """
-        While self.message returns the inputted text if printed, it is actually a class holding
-        all the attributes of the TextInput. View shows only the text the user inputted.
-
-        This is important because it is a weak instance and cannot be pickled with mission_params,
-        and we only want the value pickled anyway
-        """
-        print(self.mission_params.cco_message_text)
+        
         message_embed = discord.Embed(
-            title="Message added",
-            description=self.mission_params.cco_message_text,
             color=constants.EMBED_COLOUR_RP
         )
+
+        if self.message.value:
+            self.mission_params.cco_message_text = str(self.message.value)
+            """
+            While self.message returns the inputted text if printed, it is actually a class holding
+            all the attributes of the TextInput. View shows only the text the user inputted.
+
+            This is important because it is a weak instance and cannot be pickled with mission_params,
+            and we only want the value pickled anyway
+            """
+            print(self.mission_params.cco_message_text)
+            message_embed.title="✍ MESSAGE SET"
+            message_embed.description=self.mission_params.cco_message_text
+
+        else:
+            self.mission_params.cco_message_text = None
+
+            message_embed.title="✖ MESSAGE REMOVED"
 
         embeds = []
         embeds.append(self.confirm_embed)
         embeds.append(message_embed)
 
+        view = EditConfirmView(self.mission_params, self.original_type, self.confirm_embed, self.author)
+
         try:
-            await interaction.response.edit_message(embeds=embeds, view=self.view)
+            await interaction.response.edit_message(embeds=embeds, view=view)
 
         except Exception as e:
             print(e)
@@ -264,82 +281,147 @@ async def edit_active_mission(interaction: discord.Interaction, mission_params, 
 
 
 
-async def edit_discord_alerts(interaction: discord.Interaction, mission_params, spamchannel, original_type):
+async def edit_discord_alerts(interaction: discord.Interaction, mission_params: MissionParams, spamchannel, original_type):
     print("Updating Discord alert...")
 
     async with interaction.channel.typing():
         try:
             # find alerts channel
-            if mission_params.commodity_name.title() == "Wine":
+            if hasattr(mission_params, "booze_cruise"): # missions from 2.3.0 have this attribute
+                # 2.3.0 stores alerts channel used in params so we don't have to figure it out, just retrieve it
+                alerts_channel = bot.get_channel(mission_params.channel_alerts_actual)
+
+            elif mission_params.commodity_name.title() == 'Wine': # pre-2.3.0 wine missions always went to cellar
                 if mission_params.mission_type == 'load':
                     alerts_channel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
                 else:   # unloading block
                     alerts_channel = bot.get_channel(mission_params.channel_defs.wine_unloading_channel_actual)
-            else:
-                alerts_channel = bot.get_channel(mission_params.channel_defs.alerts_channel_actual)
+
+            else: # pre-2.3.0 non-wine loads
+                alerts_channel = bot.get_channel(mission_params.channel_defs.alerts_channel_actual)            
 
             print(alerts_channel)
             print(mission_params.discord_alert_id)
 
             # get message object from trade alerts
             print("Fetch alerts message from Discord by ID")
-            discord_alert_msg = await alerts_channel.fetch_message(mission_params.discord_alert_id)
+            try:
+                discord_alert_msg = await alerts_channel.fetch_message(mission_params.discord_alert_id)
+            except:
+                print("No discord alert message found")
+                discord_alert_msg = None
 
             # get new trade alert message
             print("Create new alert text and embed")
-            mission_params.discord_text = txt_create_discord(mission_params)
-            embed = await return_discord_alert_embed(interaction, mission_params)
+            mission_params.discord_text = txt_create_discord(interaction, mission_params)
+            if hasattr(mission_params, "booze_cruise") and not mission_params.booze_cruise: # pre-2.3.0 backwards compatibility
+                # TRUE if the BC flag is present, but not set (i.e. no BC state active)
+                embed = await return_discord_alert_embed(interaction, mission_params)
+            else:
+                # these few lines of code are super dumb but basically just skip the embed generation if it's not needed :|
+                embed = await return_discord_alert_embed(interaction, mission_params)
 
             # edit in new trade alert message
-            try:
-                print("Edit alert message")
-                await discord_alert_msg.edit(embed=embed)
-            except Exception as e:
-                print(e)
-                embed=discord.Embed(description=f"Error editing discord alert: {e}", color=constants.EMBED_COLOUR_ERROR)
-                await spamchannel.send(embed=embed)
+            if discord_alert_msg:
+                try:
+                    print("Edit alert message")
+                    if hasattr(mission_params, "booze_cruise"): # pre-2.3.0 backwards compatibility
+                        await discord_alert_msg.edit(content=mission_params.discord_text, suppress=True) if mission_params.booze_cruise else await discord_alert_msg.edit(embed=embed) 
+                    else:
+                        await discord_alert_msg.edit(embed=embed) 
+                except Exception as e:
+                    print(e)
+                    embed=discord.Embed(description=f"Error editing discord alert: {e}", color=constants.EMBED_COLOUR_ERROR)
+                    await spamchannel.send(embed=embed)
+            else:
+                try:
+                    print("Send new alert")
+                    submit_mission = await send_discord_alert(interaction, mission_params)
+
+                    embed = discord.Embed(
+                        description=f"Original alert not found. Replacement sent to <#{mission_params.channel_alerts_actual}>",
+                        color=constants.EMBED_COLOUR_WARNING
+                    )
+                    await interaction.channel.send(embed=embed)
+                except Exception as e:
+                    error = f'Original alert not found and unable to send new: {e}'
+                    try:
+                        raise CustomError(error)
+                    except Exception as e:
+                        await on_generic_error(interaction, e)
 
             print("Updating Discord channel embeds...")
             # get message object from carrier channel
             carrier_channel = bot.get_channel(mission_params.mission_temp_channel_id)
-            discord_channel_msg = await carrier_channel.fetch_message(mission_params.discord_msg_id)
-            if mission_params.notify_msg_id:
-                discord_notify_msg = await carrier_channel.fetch_message(mission_params.notify_msg_id)
-
-            # get new channel embeds from Mission Generator
-            print("Get new channel embeds from Mission Generator")
-            discord_embeds = await return_discord_channel_embeds(mission_params) # this function saves embeds to mission_params too
-
-            send_embeds = [discord_embeds.buy_embed, discord_embeds.sell_embed, discord_embeds.info_embed, discord_embeds.help_embed]
-
-            print("Checking for cco_message_text status...")
-            if mission_params.cco_message_text is not None: send_embeds.append(discord_embeds.owner_text_embed)
+            try:
+                discord_channel_msg = await carrier_channel.fetch_message(mission_params.discord_msg_id)
+            except:
+                discord_channel_msg = None
 
             if mission_params.notify_msg_id:
-                ping_role_id = wineloader_role() if mission_params.commodity_name == 'Wine' else hauler_role()
-                await discord_notify_msg.edit(content=f"<@&{ping_role_id}>: {mission_params.discord_text}")
-
-            print("Checking mission_type status...")
-            if original_type != mission_params.mission_type:
                 try:
-                    print(f"Type changed to {mission_params.mission_type} (from {original_type}), creating new image")
-                    mission_params.discord_img_name = await create_carrier_discord_mission_image(mission_params)
+                    discord_notify_msg = await carrier_channel.fetch_message(mission_params.notify_msg_id)
+                except:
+                    pass
 
-                    file = discord.File(mission_params.discord_img_name, filename="image.png")
-                    print(file)
+            if discord_channel_msg:
+                # get new channel embeds from Mission Generator
+                print("Get new channel embeds from Mission Generator")
+                discord_embeds = await return_discord_channel_embeds(mission_params) # this function saves embeds to mission_params too
 
-                    print("Uploading new image...")
-                    # await discord_channel_msg.add_files(file)
+                send_embeds = [discord_embeds.buy_embed, discord_embeds.sell_embed, discord_embeds.info_embed, discord_embeds.help_embed]
 
+                print("Checking for cco_message_text status...")
+                if mission_params.cco_message_text is not None: send_embeds.append(discord_embeds.owner_text_embed)
+
+                if mission_params.notify_msg_id: 
+                    if hasattr(mission_params, "booze_cruise"): # 2.3.0+
+                        ping_role_id = mission_params.role_ping_actual
+                    else: # pre-2.3.0 compatibility
+                        ping_role_id = wineloader_role() if mission_params.commodity_name.title == 'Wine' else hauler_role()
+                    await discord_notify_msg.edit(content=f"<@&{ping_role_id}>: {mission_params.discord_text}", suppress=True)
+
+                print("Checking mission_type status...")
+                if original_type != mission_params.mission_type:
+                    try:
+                        print(f"Type changed to {mission_params.mission_type} (from {original_type}), creating new image")
+                        mission_params.discord_img_name = await create_carrier_discord_mission_image(mission_params)
+
+                        file = discord.File(mission_params.discord_img_name, filename="image.png")
+                        print(file)
+
+                        print("Uploading new image...")
+                        # await discord_channel_msg.add_files(file)
+
+                        print("Editing Discord channel message...")
+                        await discord_channel_msg.edit(content=mission_params.discord_msg_content, embeds=send_embeds, attachments=[file])
+
+                    except Exception as e:
+                        print(e)
+
+                else:
                     print("Editing Discord channel message...")
-                    await discord_channel_msg.edit(content=mission_params.discord_msg_content, embeds=send_embeds, attachments=[file])
+                    await discord_channel_msg.edit(content=mission_params.discord_msg_content, embeds=send_embeds)
 
+            else: # haha did someone delete their message, who would possibly do that ZEPPTRIL
+                print("No message found, sending a new one...")
+                try:
+                    mission_temp_channel = bot.get_channel(mission_params.mission_temp_channel_id)
+                    await send_discord_channel_message(interaction, mission_params, mission_temp_channel)
+
+                    discord_channel_msg = await carrier_channel.fetch_message(mission_params.discord_msg_id)
+
+                    embed = discord.Embed(
+                        description=f"Original channel message not found. Replacement sent to {discord_channel_msg.jump_url}",
+                        color=constants.EMBED_COLOUR_WARNING
+                    )
+                    await interaction.channel.send(embed=embed)
                 except Exception as e:
-                    print(e)
-
-            else:
-                print("Editing Discord channel message...")
-                await discord_channel_msg.edit(content=mission_params.discord_msg_content, embeds=send_embeds)
+                    error = f'Original channel message not found and unable to send new: {e}'
+                    try:
+                        raise CustomError(error)
+                    except Exception as e:
+                        await on_generic_error(interaction, e)
 
         except Exception as e:
             print(e)

@@ -360,6 +360,7 @@ class GeneralCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
+
     # list all active carrier trade missions from DB
     @commands.command(name='issions', help='List all active trade missions.')
     async def issions(self, ctx):
@@ -592,7 +593,6 @@ class GeneralCommands(commands.Cog):
     
 
     # sign up for a Community Carrier's notification role
-    # TODO TEST
     @app_commands.command(name="notify_me",
                           description="Private command: Use in a COMMUNITY CHANNEL to opt in/out to receive its notifications.")
     async def notify_me(self, interaction: discord.Interaction):

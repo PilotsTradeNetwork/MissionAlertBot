@@ -6,6 +6,8 @@ Our custom global error handler for the bot.
 Dependends on: constants
 """
 
+# import asyncio
+from asyncio import TimeoutError
 
 # import discord.py
 import discord
@@ -31,6 +33,15 @@ class CommandRoleError(app_commands.CheckFailure): # role check error
         super().__init__(permitted_roles, formatted_role_list, "Role check error raised")
     pass
 
+class AsyncioTimeoutError(Exception):
+    def __init__(self, message, isprivate=True):
+        self.message = message
+        self.isprivate = isprivate
+    pass
+
+class SilentError(Exception): # generic error
+    pass
+
 class GenericError(Exception): # generic error
     pass
 
@@ -51,12 +62,20 @@ async def on_generic_error(
     error
 ): # an error handler for our custom errors
     try:
+        if isinstance(error, SilentError):
+            emoji = '🤫 SilentError'
+        elif isinstance (error, AsyncioTimeoutError):
+            emoji = '⏲ TimeoutError'
+        else:
+            emoji = '❌ Error'
+
         spamchannel = bot.get_channel(bot_spam_channel())
         spam_embed = discord.Embed(
-            description=f"Error from `{interaction.command.name}` in <#{interaction.channel.id}> called by <@{interaction.user.id}>: ```{error}```",
+            description=f"{emoji} from `{interaction.command.name}` in <#{interaction.channel.id}> called by <@{interaction.user.id}>: ```{error}```",
             color=constants.EMBED_COLOUR_ERROR
         )
         await spamchannel.send(embed=spam_embed)
+        
     except Exception as e:
         print(e)
 
@@ -89,6 +108,22 @@ async def on_generic_error(
                 await interaction.response.send_message(embed=embed)
             except:
                 await interaction.followup.send(embed=embed)
+
+    elif isinstance(error, AsyncioTimeoutError):
+        message = error.message
+        ephemeral = True if error.isprivate else False
+        print(f"⏲ TimeoutError raised: {error}")
+        embed = discord.Embed(
+            description=f"❌⏲ {message}",
+            color=constants.EMBED_COLOUR_ERROR
+        )
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+        except:
+            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+
+    elif isinstance(error, SilentError):
+        print("🤫 SilentError called - error was not reported to user.")
 
     else:
         print(f"Error {error} was not caught by on_generic_error")

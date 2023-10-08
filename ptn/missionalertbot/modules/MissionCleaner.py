@@ -24,13 +24,14 @@ from ptn.missionalertbot.classes.MissionParams import MissionParams
 # import local constants
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, bot_spam_channel, wine_alerts_loading_channel, wine_alerts_unloading_channel, trade_alerts_channel, get_reddit, sub_reddit, \
-    reddit_flair_mission_stop, seconds_long, sub_reddit, mission_command_channel, ptn_logo_discord, reddit_flair_mission_start, channel_upvotes, trade_cat, seconds_very_short
+    reddit_flair_mission_stop, seconds_long, sub_reddit, mission_command_channel, ptn_logo_discord, reddit_flair_mission_start, channel_upvotes, trade_cat, seconds_very_short, \
+    reddit_timeout
 
 # import local modules
 from ptn.missionalertbot.database.database import backup_database, mission_db, missions_conn, find_carrier, CarrierDbFields
 from ptn.missionalertbot.modules.DateString import get_final_delete_hammertime, get_mission_delete_hammertime
 from ptn.missionalertbot.modules.helpers import lock_mission_channel, unlock_mission_channel, clean_up_pins, ChannelDefs, check_mission_channel_lock
-from ptn.missionalertbot.modules.ErrorHandler import GenericError, CustomError, on_generic_error
+from ptn.missionalertbot.modules.ErrorHandler import GenericError, CustomError, on_generic_error, AsyncioTimeoutError, SilentError
 
 
 """
@@ -38,39 +39,31 @@ MISSION COMPLETE & CLEANUP
 """
 
 # clean up a completed mission
-async def _cleanup_completed_mission(interaction: discord.Interaction, mission_data, reddit_complete_text, discord_complete_embed: discord.Embed, message, is_complete):
+async def _cleanup_completed_mission(interaction: discord.Interaction, mission_data: MissionData, reddit_complete_text, discord_complete_embed: discord.Embed, message, is_complete):
     async with interaction.channel.typing():
         print("called _cleanup_completed_mission")
 
         status = "complete" if is_complete else "unable to complete"
         thumb = constants.ICON_FC_COMPLETE if is_complete else constants.ICON_FC_EMPTY
+        emoji = f'<:fc_complete:{constants.fc_complete_emoji()}>' if is_complete else f'<:fc_empty:{constants.fc_empty_emoji()}>'
+        
         print(status)
 
-        try: # for backwards compatibility with missions created before the new column was added
-            mission_params = mission_data.mission_params
+        try:
+            mission_params: MissionParams = mission_data.mission_params
             print("Found mission_params")
         except:
             print("No mission_params found, mission created pre-2.1.0?")
-
-        if not mission_params:
-            print("instantiating mission_params with channel defs")
-            # instantiate a fresh instance of mission params with just channel_defs for channel definitions
-            channel_defs = ChannelDefs(
-                trade_cat(),
-                trade_alerts_channel(),
-                mission_command_channel(),
-                channel_upvotes(),
-                wine_alerts_loading_channel(),
-                wine_alerts_unloading_channel(),
-                sub_reddit(),
-                reddit_flair_mission_start(),
-                reddit_flair_mission_stop()
-            )
-            mission_params = MissionParams(dict(channel_defs = channel_defs))
+            try:
+                error = 'No MissionParams found, unable to continue. Contact an Admin for manual mission cleanup.'
+                raise CustomError(error)
+            except Exception as e:
+                await on_generic_error(interaction, e)
 
         async with interaction.channel.typing():
             completed_mission_channel = bot.get_channel(mission_data.channel_id)
             mission_gen_channel = bot.get_channel(mission_params.channel_defs.mission_command_channel_actual)
+            cco = True if interaction.channel.id == mission_gen_channel.id else False
 
             backup_database('missions')  # backup the missions database before going any further
 
@@ -80,19 +73,23 @@ async def _cleanup_completed_mission(interaction: discord.Interaction, mission_d
                 try:  # try in case it's already been deleted, which doesn't matter to us in the slightest but we don't
                     # want it messing up the rest of the function
 
-                    # first check if it's Wine, in which case it went to the booze cruise channel
-                    if mission_data.commodity.title() == "Wine":
+                    if hasattr(mission_params, "booze_cruise"): # missions from 2.3.0 have this attribute
+                        # 2.3.0 stores alerts channel used in params so we don't have to figure it out, just retrieve it
+                        alerts_channel = bot.get_channel(mission_params.channel_alerts_actual)
+
+                    elif mission_data.commodity.title() == 'Wine': # pre-2.3.0 wine loads were always sent to the cellar
                         if mission_data.mission_type == 'load':
-                            alert_channel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
+                            alerts_channel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
                         else:
-                            alert_channel = bot.get_channel(mission_params.channel_defs.wine_unloading_channel_actual)
-                    else:
-                        alert_channel = bot.get_channel(mission_params.channel_defs.alerts_channel_actual)
+                            alerts_channel = bot.get_channel(mission_params.channel_defs.wine_unloading_channel_actual)
+
+                    else: # pre-2.3.0 non-wine loads
+                        alerts_channel = bot.get_channel(mission_params.channel_defs.alerts_channel_actual)
 
                     discord_alert_id = mission_data.discord_alert_id
 
                     try:
-                        msg = await alert_channel.fetch_message(discord_alert_id)
+                        msg = await alerts_channel.fetch_message(discord_alert_id)
                         await msg.delete()
                     except:
                         print("No alert found, maybe user deleted it?")
@@ -113,16 +110,46 @@ async def _cleanup_completed_mission(interaction: discord.Interaction, mission_d
             print("Add comment to Reddit post...")
             if mission_data.reddit_post_id:
                 try:  # try in case Reddit is down
-                    reddit_post_id = mission_data.reddit_post_id
-                    reddit = await get_reddit()
-                    await reddit.subreddit(mission_params.channel_defs.sub_reddit_actual)
-                    submission = await reddit.submission(reddit_post_id)
-                    await submission.reply(reddit_complete_text)
-                    # mark original post as spoiler, change its flair
-                    await submission.flair.select(mission_params.channel_defs.reddit_flair_completed)
-                    await submission.mod.spoiler()
-                except:
-                    feedback_embed.add_field(name="Error", value="❌ Failed updating Reddit :(")
+                    async def add_reddit_comment():
+                        reddit_post_id = mission_data.reddit_post_id
+                        reddit = await get_reddit()
+                        await reddit.subreddit(mission_params.channel_defs.sub_reddit_actual)
+                        submission = await reddit.submission(reddit_post_id)
+                        await submission.reply(reddit_complete_text)
+                        # mark original post as spoiler, change its flair
+                        await submission.flair.select(mission_params.channel_defs.reddit_flair_completed)
+                        await submission.mod.spoiler()
+
+                    await asyncio.wait_for(add_reddit_comment(), timeout=reddit_timeout())
+
+                except asyncio.TimeoutError:
+                    print("❌⏲ TimeoutError while updating Reddit")
+                    error = "Timed out while trying to update Reddit."
+                    if cco:
+                        try:
+                            raise AsyncioTimeoutError(error, False)
+                        except Exception as e:
+                            await on_generic_error(interaction, e)
+                    else:
+                        try:
+                            raise SilentError(error)
+                        except Exception as e:
+                            await on_generic_error(interaction, e)
+
+
+                except Exception as e:
+                    print(f"❌ Failed updating Reddit: {e}")
+                    error = f'Failed updating Reddit {e}'
+                    if cco:
+                        try:
+                            raise CustomError(error, False)
+                        except Exception as e:
+                            await on_generic_error(interaction, e)
+                    else:
+                        try:
+                            raise SilentError(error)
+                        except Exception as e:
+                            await on_generic_error(interaction, e)
 
 
             # update webhooks
@@ -158,8 +185,19 @@ async def _cleanup_completed_mission(interaction: discord.Interaction, mission_d
                                 await webhook.send(embed=embed, username='Pilots Trade Network', avatar_url=bot.user.avatar.url, wait=True)
 
                         except Exception as e:
-                            print(f"Failed updating webhook message {webhook_jump_url} with URL {webhook_url}: {e}")
-                            await feedback_embed.add_field(name="Error", value=f"❌ Failed updating webhook message {webhook_jump_url} with URL {webhook_url}: {e}")
+                            error = f"Failed updating webhook message {webhook_jump_url} with URL {webhook_url}: {e}"
+                            print(error)
+                            if cco:
+                                try:
+                                    raise CustomError(error, False)
+                                except Exception as e:
+                                    await on_generic_error(interaction, e)
+                            else:
+                                try:
+                                    raise SilentError(error)
+                                except Exception as e:
+                                    await on_generic_error(interaction, e)
+
             except: 
                 print("No mission_params found to define webhooks, pre-2.1.0 mission?")
 
@@ -173,21 +211,23 @@ async def _cleanup_completed_mission(interaction: discord.Interaction, mission_d
             # command feedback
             print("Log usage in bot spam")
             spamchannel = bot.get_channel(bot_spam_channel())
-            reason = f"\n\nReason given: `{message}`" if not message == None else ""
+            reason = f"\n\nReason given: `{message}`" if not message == None else "" # TODO what the unholy fuck is this Sihmm
             embed = discord.Embed(title=f"Mission {status} for {mission_data.carrier_name}",
                                 description=f"<@{interaction.user.id}> reported in <#{interaction.channel.id}> ({interaction.channel.name}).{reason}",
                                 color=constants.EMBED_COLOUR_OK)
             embed.set_thumbnail(url=thumb)
             await spamchannel.send(embed=embed)
 
-            if interaction.channel.id == mission_gen_channel.id: # tells us whether /cco complete was used or /mission complete
+            if cco: # tells us whether /cco complete was used or /mission complete
                 print("Send feedback to the CCO")
+                message_text = f':\nReason given: `{message}`' if message else ''
                 feedback_embed = discord.Embed(
-                    title=f"Mission {status} for {mission_data.carrier_name}",
-                    color=constants.EMBED_COLOUR_OK)
-                feedback_embed.add_field(name="Explanation given", value=message, inline=True)
+                    description=f"{emoji} **MISSION {status.upper()}** for **{mission_data.carrier_name}**{message_text}",
+                    color=constants.EMBED_COLOUR_OK
+                )
+                
                 feedback_embed.set_footer(text="Updated sent alerts and removed from mission list.")
-                feedback_embed.set_thumbnail(url=thumb)
+                # feedback_embed.set_thumbnail(url=thumb)
                 await interaction.edit_original_response(embed=feedback_embed)
 
         # notify owner if not command user

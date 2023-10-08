@@ -6,22 +6,29 @@ Depends on: constants, database, Embeds, ErrorHandler, helpers, MissionCleaner
 """
 
 # import libraries
+import asyncio
 import os
 from datetime import datetime
 
 # import discord.py
 import discord
+from discord import HTTPException, NotFound
 from discord.ui import View, Modal
 
 # import local constants
 import ptn.missionalertbot.constants as constants
-from ptn.missionalertbot.constants import seconds_long, o7_emoji, bot_spam_channel, bot
+from ptn.missionalertbot.constants import seconds_long, o7_emoji, bot_spam_channel, bot, fc_complete_emoji, bot_command_channel
+
+# import local classes
+import ptn.missionalertbot.classes.CommunityCarrierData as CommunityCarrierData
 
 # import local modules
-from ptn.missionalertbot.database.database import delete_nominee_from_db, delete_carrier_from_db, _update_carrier_details_in_database, find_carrier, CarrierDbFields, mission_db, missions_conn
+from ptn.missionalertbot.database.database import delete_nominee_from_db, delete_carrier_from_db, _update_carrier_details_in_database, find_carrier, CarrierDbFields, \
+    mission_db, missions_conn, add_carrier_to_database
 from ptn.missionalertbot.modules.DateString import get_mission_delete_hammertime
-from ptn.missionalertbot.modules.Embeds import _configure_all_carrier_detail_embed, _generate_cc_notice_embed, role_removed_embed, role_granted_embed
-from ptn.missionalertbot.modules.ErrorHandler import GenericError, on_generic_error
+from ptn.missionalertbot.modules.Embeds import _configure_all_carrier_detail_embed, _generate_cc_notice_embed, role_removed_embed, role_granted_embed, cc_renamed_embed, \
+    _add_common_embed_fields
+from ptn.missionalertbot.modules.ErrorHandler import GenericError, on_generic_error, CustomError, AsyncioTimeoutError
 from ptn.missionalertbot.modules.helpers import _remove_cc_manager
 from ptn.missionalertbot.modules.MissionCleaner import _cleanup_completed_mission
 
@@ -106,7 +113,7 @@ class ConfirmRemoveRoleView(View):
         super().__init__(timeout=timeout)
 
     @discord.ui.button(label="Remove", style=discord.ButtonStyle.danger, emoji="💥", custom_id="remove")
-    async def remove_role_button(self, interaction, button):
+    async def remove_role_button(self, interaction: discord.Interaction, button):
         print(f"{interaction.user} confirms remove {self.role.name} role")
 
         embed = discord.Embed(
@@ -118,7 +125,7 @@ class ConfirmRemoveRoleView(View):
         try:
             await self.member.remove_roles(self.role)
             self.embed, spam_embed = role_removed_embed(interaction, self.member, self.role)
-            await self.message.edit(embed=self.embed, view=None)
+            await interaction.response.edit_message(embed=self.embed, view=None)
             await self.spamchannel.send(embed=spam_embed)
         except Exception as e:
             try:
@@ -127,7 +134,7 @@ class ConfirmRemoveRoleView(View):
                 await on_generic_error(interaction, e)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="✖", custom_id="cancel")
-    async def cancel_remove_role_button(self, interaction, button):
+    async def cancel_remove_role_button(self, interaction: discord.Interaction, button):
         print(f"{interaction.user} cancelled remove {self.role.name} role")
         self.embed = discord.Embed(
             description="Cancelled.",
@@ -135,23 +142,130 @@ class ConfirmRemoveRoleView(View):
         )
         return await interaction.response.edit_message(embed=self.embed, view=None)
 
-    async def on_timeout(self):
+    async def on_timeout(self): 
         # remove buttons
         self.clear_items()
+        print("View timed out")
 
-        if not self.embed:
         # return a message to the user that the interaction has timed out
-            timeout_embed = discord.Embed(
-                description="Timed out.",
-                color=constants.EMBED_COLOUR_ERROR
-            )
-            self.embed = timeout_embed
+        timeout_embed = discord.Embed(
+            description="Timed out.",
+            color=constants.EMBED_COLOUR_ERROR
+        )
 
         try:
-            await self.message.edit(embed=self.embed, view=self)
+            await self.message.edit(embed=timeout_embed, view=self)
         except Exception as e:
-            print(e)
+            print(f'Failed applying timeout: {e}')
 
+
+# buttons for community channel rename
+class ConfirmRenameCC(View):
+    def __init__(self, community_carrier, old_channel_name, new_channel_name, timeout=30):
+        print("ConfirmRenameCC init")
+        self.community_carrier: CommunityCarrierData = community_carrier
+        self.new_channel_name = new_channel_name
+        self.old_channel_name = old_channel_name
+        self.spamchannel: discord.TextChannel = bot.get_channel(bot_spam_channel())
+        super().__init__(timeout=timeout)
+
+    @discord.ui.button(label="✗ Cancel", style=discord.ButtonStyle.secondary, custom_id="cancel_rename_cc")
+    async def cancel_rename_cc_button(self, interaction: discord.Interaction, button):
+        print(f"{interaction.user} cancelled renaming CC")
+        self.embed = discord.Embed(
+            description="Cancelled.",
+            color=constants.EMBED_COLOUR_OK
+        )
+        return await interaction.response.edit_message(embed=self.embed, view=None)
+
+    @discord.ui.button(label="✔ Confirm", style=discord.ButtonStyle.primary, custom_id="confirm_rename_cc")
+    async def confirm_rename_cc_button(self, interaction: discord.Interaction, button):
+        print(f"{interaction.user} confirmed renaming CC")
+
+        embed = discord.Embed(
+            description="⏳ Please wait a moment...",
+            color=constants.EMBED_COLOUR_QU
+        )
+
+        await interaction.response.edit_message(embed=embed, view=None)
+
+        failed_embed = discord.Embed(
+            description="❌ Failed.",
+            color=constants.EMBED_COLOUR_ERROR
+        )
+
+        timeout=15
+
+        # wrap this in an asyncio wait_for as sometimes this takes ages and fails for no reason
+        async def _rename_community_channel():
+            try:
+                # rename channel
+                action = 'channel'
+                await interaction.channel.edit(name=self.new_channel_name)
+                print("Renamed channel")
+
+                # rename role
+                action = 'role'
+                role = discord.utils.get(interaction.guild.roles, id=self.community_carrier.role_id)
+                await role.edit(name=self.new_channel_name)
+                print("Renamed role")
+
+            except HTTPException as e:
+                error = f"Received HTTPException from Discord. We might be rate-limited. Please try again in 20-30 minutes.\n```{e}```"
+                await interaction.edit_original_response(embed=failed_embed, view=None)
+                try:
+                    raise CustomError(error)
+                except Exception as e:
+                    await on_generic_error(interaction, e)
+                return
+
+            except Exception as e:
+                error = f'Failed to rename {action}: {e}'
+                print(error)
+                await interaction.edit_original_response(embed=failed_embed, view=None)
+                try:
+                    raise CustomError(error)
+                except Exception as e:
+                    await on_generic_error(interaction, e)
+                return
+
+        try:
+            await asyncio.wait_for(_rename_community_channel(), timeout=timeout)
+        except asyncio.TimeoutError:
+            error = 'No response from Discord. We might be rate limited. Try again in 20-30 minutes.'
+            await interaction.edit_original_response(embed=failed_embed, view=None)
+            try:
+                raise AsyncioTimeoutError(error)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+            return
+
+        try:
+            embed, spam_embed = cc_renamed_embed(interaction, self.old_channel_name, self.community_carrier)
+            await interaction.edit_original_response(embed=embed, view=None)
+            await self.spamchannel.send(embed=spam_embed)
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+    async def on_timeout(self): 
+        # remove buttons
+        self.clear_items()
+        print("View timed out")
+
+        # return a message to the user that the interaction has timed out
+        timeout_embed = discord.Embed(
+            description="Timed out.",
+            color=constants.EMBED_COLOUR_ERROR
+        )
+
+        try:
+            await self.message.edit(embed=timeout_embed, view=self)
+        except Exception as e:
+            print(f'Failed applying timeout: {e}')
 
 # buttons for mission manual delete
 class MissionDeleteView(View):
@@ -634,3 +748,137 @@ class SendNoticeModal(Modal):
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         await interaction.response.send_message(f'Oops! Something went wrong: {error}', ephemeral=True)
+
+
+# Buttons for Add Carrier interaction
+class AddCarrierButtons(View):
+    def __init__(self, message, carrier_details):
+        self.message: discord.Message = message
+        self.carrier_details: dict = carrier_details
+        super().__init__(timeout=60)
+
+    @discord.ui.button(label='✗ Cancel', style=discord.ButtonStyle.secondary, custom_id='add_carrier_cancel')
+    async def add_carrier_cancel_button(self, interaction: discord.Interaction, button):
+        embed = discord.Embed(
+            description="Cancelled.",
+            color=constants.EMBED_COLOUR_OK
+        )
+        await interaction.response.edit_message(embed=embed, view=None)
+        pass
+
+    @discord.ui.button(label='✔ Add All to DB', style=discord.ButtonStyle.primary, custom_id='add_carrier_add_all')
+    async def add_carrier_add_all(self, interaction: discord.Interaction, button):
+
+        embed = discord.Embed(
+            description="⏳ Please wait a moment...",
+            color=constants.EMBED_COLOUR_QU
+        )
+
+        await interaction.response.edit_message(embed=embed, view=None)
+
+        # define our function that will be used to check for duplicate entries
+        def check_for_duplicates(details):
+            try:
+                carrier_data = find_carrier(details['long_name'], CarrierDbFields.longname.name)
+                if carrier_data:
+                    print(f"Duplicate long_name: {carrier_data}")
+                    duplicate = details['long_name']
+                    return duplicate, carrier_data
+                carrier_data = find_carrier(details['carrier_id'], CarrierDbFields.cid.name)
+                if carrier_data:
+                    print(f"Duplicate carrier_id: {carrier_data}")
+                    duplicate = details['carrier_id']
+                    return duplicate, carrier_data
+                carrier_data = find_carrier(details['short_name'], CarrierDbFields.shortname.name)
+                if carrier_data:
+                    print(f"Duplicate short_name: {carrier_data}")
+                    duplicate = details['short_name']
+                    return duplicate, carrier_data
+                else:
+                    duplicate = None
+            except Exception as e:
+                print(e)
+            return duplicate, None
+
+
+        for details in self.carrier_details:
+            long_name = details['long_name']
+            carrier_id = details['carrier_id']
+            short_name = details['short_name']
+            owner_id = details['owner_id']
+            channel_name = details['channel_name']
+            try:
+                # call our duplicates check
+                print("Checking for existing data in DB")
+                duplicate, carrier_data = check_for_duplicates(details)
+                if duplicate:
+                    # skip the carrier and notify the user
+                    print(f'Request recieved from {interaction.user} to add a carrier that already exists in the database ({long_name}).')
+
+                    embed = discord.Embed(
+                        title="Fleet carrier already exists, use /carrier_edit to change its details.",
+                        description=f"Carrier data matched for {duplicate}",
+                        color=constants.EMBED_COLOUR_OK
+                    )
+                    embed = _add_common_embed_fields(embed, carrier_data, interaction)
+
+                    await interaction.followup.send(embed=embed)
+
+                else:
+                    # continue with adding carrier
+                    await add_carrier_to_database(short_name.lower(), long_name.upper(), carrier_id.upper(), channel_name.lower(), 0, owner_id)
+                    carrier_data = find_carrier(long_name, CarrierDbFields.longname.name)
+                    info_embed = discord.Embed(title="Fleet Carrier successfully added to database",
+                                        color=constants.EMBED_COLOUR_OK)
+                    info_embed = _add_common_embed_fields(info_embed, carrier_data, interaction)
+
+                    cp_embed = discord.Embed(
+                        title="Copy/Paste code for Stockbot",
+                        description=f"▶ <#{bot_command_channel()}>:\n```;add_FC {carrier_data.carrier_identifier} {carrier_data.carrier_short_name} {carrier_data.ownerid}```",
+                        color=constants.EMBED_COLOUR_QU
+                    )
+
+                    embeds = [info_embed, cp_embed]
+
+                    # TODO link with existing add_carrier function to remove duplicate code
+
+                    await interaction.followup.send(embeds=embeds)
+
+                    # notify bot-spam
+                    print("Notify bot-spam")
+                    spamchannel: discord.TextChannel = bot.get_channel(bot_spam_channel())
+                    print(spamchannel)
+                    embed = discord.Embed(
+                        description=f"<:fc_complete:{fc_complete_emoji()}> **NEW FLEET CARRIER** added by <@{interaction.user.id}> from {self.message.jump_url}",
+                        color=constants.EMBED_COLOUR_OK
+                    )
+                    embed = _add_common_embed_fields(embed, carrier_data, interaction)
+                    await spamchannel.send(embed=embed)
+
+            except Exception as e:
+                error = f"Failed adding {details['ptn_string']}. Please add it manually. Error: {e}"
+                try:
+                    raise CustomError(error)
+                except Exception as e:
+                    await on_generic_error(interaction, e)
+        
+        await interaction.delete_original_response()
+
+
+    async def on_timeout(self): 
+        # remove buttons
+        self.clear_items()
+        print("View timed out")
+
+        # return a message to the user that the interaction has timed out
+        timeout_embed = discord.Embed(
+            description="⏲ Timed out.",
+            color=constants.EMBED_COLOUR_ERROR
+        )
+
+        try:
+            await self.message.edit(embed=timeout_embed, view=self)
+        except NotFound: # we don't care about 404 as we're deleting the original message
+            pass
+        except Exception as e:
+            print(f'Failed applying timeout: {e}')

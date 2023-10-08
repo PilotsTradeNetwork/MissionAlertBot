@@ -117,7 +117,7 @@ async def lasttrade_cron():
                     await spamchannel.send(f"{owner.name} has been removed from the Certified Carrier role due to inactivity.")
                     # notify by DM
                     owner_dm = await bot.fetch_user(carrier_data.ownerid)
-                    await owner_dm.send(f"Ahoy CMDR! Your last PTN Fleet Carrier trade was more than 28 days ago at {last_traded} so you have been automatically marked as inactive and placed in the PTN Fleet Reserve. **You can visit <#939919613209223270> at any time to mark yourself as active and return to trading**. o7 CMDR!")
+                    await owner_dm.send(f"Ahoy CMDR! Your last PTN Fleet Carrier trade was more than 28 days ago at {last_traded} so you have been automatically marked as inactive and placed in the PTN Fleet Reserve. You can visit <#939919613209223270> or use `/cco active` to **mark yourself as active and return to trading**. o7 CMDR!")
                     print(f"Notified {owner.name} by DM.")
                 if fr_role not in owner.roles:
                     print(f"{owner.name} does not have the Fleet Reserve role, adding.")

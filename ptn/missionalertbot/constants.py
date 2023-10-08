@@ -79,6 +79,7 @@ PROD_ROLEAPPS_CHANNEL = 867820665515147293 # role-applications on the live serve
 PROD_UPVOTE_EMOJI = 828287733227192403 # upvote emoji on live server
 PROD_O7_EMOJI = 806138784294371368 # o7 emoji on live server
 PROD_FC_COMPLETE_EMOJI = 878216234653605968 # fc_complete emoji
+PROD_FC_EMPTY_EMOJI = 878216288525242388 # fc_empty emoji
 PROD_DISCORD_EMOJI = 1122605426844905503 # Discord emoji on live
 PROD_HAULER_ROLE = 875313960834965544 # hauler role ID on live server
 PROD_WINELOADER_ROLE = 881809680765165578 # wine loader role on live
@@ -95,6 +96,7 @@ PROD_RECRUIT_ROLE = 800681823575343116 # CCO Recruit role
 PROD_CPILLAR_ROLE = 863789660425027624 # Community Pillar role on live server
 PROD_DEV_ROLE = 812988180210909214 # Developer role ID on live
 PROD_MOD_ROLE = 813814494563401780 # Mod role ID on Live
+PROD_SOMM_ROLE = 838520893181263872 # Sommelier role ID on live
 PROD_VERIFIED_ROLE = 867820916331118622 # Verified Member
 PROD_EVENT_ORGANISER_ROLE = 1023296182639939594 # Event Organiser
 PROD_BOT_ROLE = 802523214809923596 # General Bot role on live (Robot Overlords)
@@ -135,6 +137,7 @@ TEST_ROLEAPPS_CHANNEL = 1121736676247609394 # role-applications on the test serv
 TEST_UPVOTE_EMOJI = 849388681382068225 # upvote emoji on test server
 TEST_O7_EMOJI = 903744117144698950 # o7 emoji on test server
 TEST_FC_COMPLETE_EMOJI = 884673510067286076 # fc_complete emoji
+TEST_FC_EMPTY_EMOJI = 974747678183424050 # fc_empty emoji
 TEST_DISCORD_EMOJI = 1122605718198026300 # Discord emoji on live
 TEST_HAULER_ROLE = 875439909102575647 # hauler role ID on test server
 TEST_WINELOADER_ROLE = 1119189364522623068 # wine loader role on test
@@ -142,6 +145,7 @@ TEST_CC_ROLE = 877220476827619399 # CC role on test server
 TEST_CC_CAT = 877108931699310592 # Community Carrier category on test server
 TEST_ADMIN_ROLE = 836367194979041351 # Bot Admin role on test server
 TEST_MOD_ROLE = 903292469049974845 # Mod role on test server
+TEST_SOMM_ROLE = 849907019502059530 # Sommeliers on test server
 TEST_CMENTOR_ROLE = 877586763672072193 # Community Mentor role on test server
 TEST_CERTCARRIER_ROLE = 822999970012463154 # Certified Carrier role on test server
 TEST_RESCARRIER_ROLE = 947520552766152744 # Fleet Reserve Carrier role on test server
@@ -179,6 +183,7 @@ EMBED_COLOUR_RP = 0xe63946              # PTN red
 EMBED_COLOUR_ERROR = 0x800000           # dark red
 EMBED_COLOUR_QU = 0x00d9ff              # que?
 EMBED_COLOUR_OK = 0x80ff80              # we're good here thanks, how are you?
+EMBED_COLOUR_WARNING = 0xFFD700         # and it was all yellow
 
 
 # defining fonts for pillow use
@@ -282,6 +287,8 @@ def mission_template_filename(current_month):
 
 DISCORD_TEMPLATE = 'discord_template.png'
 
+OPT_IN_ID = 'OPT-INX'
+
 # images and icons used in mission embeds
 BLANKLINE_400PX = 'https://pilotstradenetwork.com/wp-content/uploads/2023/01/400x1-00000000.png'
 ICON_BUY = 'https://pilotstradenetwork.com/wp-content/uploads/2023/05/Trade.png'
@@ -365,6 +372,9 @@ def o7_emoji():
 def fc_complete_emoji():
   return PROD_FC_COMPLETE_EMOJI if _production else TEST_FC_COMPLETE_EMOJI
 
+def fc_empty_emoji():
+  return PROD_FC_EMPTY_EMOJI if _production else TEST_FC_EMPTY_EMOJI
+
 def discord_emoji():
   return PROD_DISCORD_EMOJI if _production else TEST_DISCORD_EMOJI
 
@@ -385,6 +395,9 @@ def admin_role():
 
 def mod_role():
   return PROD_MOD_ROLE if _production else TEST_MOD_ROLE
+
+def somm_role():
+  return PROD_SOMM_ROLE if _production else TEST_SOMM_ROLE
 
 def cmentor_role():
   return PROD_CMENTOR_ROLE if _production else TEST_CMENTOR_ROLE

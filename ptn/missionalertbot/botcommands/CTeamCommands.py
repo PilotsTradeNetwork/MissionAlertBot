@@ -5,18 +5,17 @@ Cog for Community Team commands
 
 # import libaries
 import os
-import emoji
+import traceback
 
 # import discord.py
 import discord
 from discord import Forbidden
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import View, Button
 
 # import local classes
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
-from ptn.missionalertbot.classes.Views import RemoveCCView, SendNoticeModal, ConfirmRemoveRoleView
+from ptn.missionalertbot.classes.Views import RemoveCCView, SendNoticeModal, ConfirmRemoveRoleView, ConfirmRenameCC
 
 # import local constants
 import ptn.missionalertbot.constants as constants
@@ -25,10 +24,10 @@ from ptn.missionalertbot.constants import bot, cmentor_role, admin_role, cc_role
 
 # import local modules
 from ptn.missionalertbot.database.database import carrier_db
-from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, GenericError, on_generic_error
+from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, GenericError, on_generic_error, CustomError
 from ptn.missionalertbot.modules.helpers import check_roles, _regex_alphanumeric_with_hyphens, _cc_owner_check, _cc_role_create_check, \
     _cc_create_channel, _cc_role_create, _cc_assign_permissions, _cc_db_enter, _remove_cc_role_from_owner, _cc_role_delete, _openclose_community_channel, \
-    _send_notice_channel_check, check_command_channel
+    _community_channel_owner_check, check_command_channel, _cc_name_string_check
 from ptn.missionalertbot.modules.Embeds import _generate_cc_notice_embed, verified_member_embed, event_organiser_embed, role_granted_embed, role_already_embed, \
     confirm_remove_role_embed, dm_forbidden_embed
 
@@ -165,7 +164,7 @@ async def toggle_event_organiser(interaction:  discord.Interaction, member: disc
 async def send_cc_notice(interaction:  discord.Interaction, message: discord.Message):
     print(f"{interaction.user.name} used send context menu in {interaction.channel.name}")
 
-    community_carrier = await _send_notice_channel_check(interaction)
+    community_carrier = await _community_channel_owner_check(interaction)
     if not community_carrier: return
 
     try:
@@ -197,7 +196,7 @@ async def edit_cc_notice(interaction:  discord.Interaction, message: discord.Mes
     print(f"{interaction.user.name} used edit CC notice context menu in {interaction.channel.name}")
 
     # check we're in a CC channel and get the CC data
-    community_carrier = await _send_notice_channel_check(interaction)
+    community_carrier = await _community_channel_owner_check(interaction)
     if not community_carrier: return
 
     """
@@ -227,7 +226,7 @@ async def edit_cc_notice(interaction:  discord.Interaction, message: discord.Mes
 @check_roles([cmentor_role(), admin_role(), cc_role()])
 async def upload_cc_thumb(interaction:  discord.Interaction, message: discord.Message):
     # check we're in the CC channel
-    if not await _send_notice_channel_check(interaction): return
+    if not await _community_channel_owner_check(interaction): return
 
     if message.attachments:
         for attachment in message.attachments: # there can only be one attachment per message
@@ -254,6 +253,7 @@ COMMUNITY TEAM COMMANDS
 /community_channel_help - community
 /create_community_channel - community
 /open_community_channel -community
+/rename_community_channel - community
 /remove_community_channel - community
 /restore_community_channel - community
 /send_notice - community
@@ -296,30 +296,8 @@ class CTeamCommands(commands.Cog):
     async def _create_community_channel(self, interaction:  discord.Interaction, owner: discord.Member, channel_name: str, channel_emoji: str = None):
         print(f"{interaction.user.name} used /create_community_channel")
         print(f"Params: {owner} {channel_name} {channel_emoji}")
-        # trim emojis to 1 character
-        emoji_string = channel_emoji[:1] if not channel_emoji == None else None
 
-        # PROCESS: check for valid emoji
-        print(emoji.is_emoji(emoji_string))
-        if not emoji.is_emoji(emoji_string) and not emoji_string == None:
-            embed = discord.Embed(description="❌ Invalid emoji supplied. Use a valid Unicode emoji from your emoji keyboard,"
-                                            f"or leave the field blank. **Discord custom emojis will not work**.", color=constants.EMBED_COLOUR_ERROR)
-            bu_link = Button(label="Full Emoji List", url="https://unicode.org/emoji/charts/full-emoji-list.html")
-            view = View()
-            view.add_item(bu_link)
-            return await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-        # PROCESS: remove unusable characters and render to lowercase
-        stripped_channel_name = _regex_alphanumeric_with_hyphens(channel_name.lower())
-
-        # check the channel name isn't too long
-        if len(stripped_channel_name) > 30:
-            embed = discord.Embed(description="❌ Channel name should be fewer than 30 characters. (Preferably a *lot* fewer.)", color=constants.EMBED_COLOUR_ERROR)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        # join with the emoji
-        new_channel_name = emoji_string + stripped_channel_name if not emoji_string == None else stripped_channel_name
-        print(f"Candidate channel name: {new_channel_name}")
+        new_channel_name = await _cc_name_string_check(interaction, channel_emoji, channel_name)
 
         # CHECK: user already owns a channel
         if not await _cc_owner_check(interaction, owner): return
@@ -339,21 +317,20 @@ class CTeamCommands(commands.Cog):
             if new_channel.category == cc_category:
                 embed = discord.Embed(description=f"❌ A Community channel <#{new_channel.id}> already exists."
                                     f" Please choose a different name for your Community channel.", color=constants.EMBED_COLOUR_ERROR)
-                await interaction.response.send_message(embed=embed)
+                return await interaction.response.send_message(embed=embed)
 
             # check whether it's an archived CC channel
             elif new_channel.category == archive_category:
                 embed = discord.Embed(description=f"❌ A Community channel <#{new_channel.id}> already exists in the archives."
                                     f" Use `/restore_community_channel` in the channel to restore it.", color=constants.EMBED_COLOUR_ERROR)
-                await interaction.response.send_message(embed=embed)
+                return await interaction.response.send_message(embed=embed)
 
             # the channel must exist with that name elsewhere on the server and so can't be used
             else:
                 embed = discord.Embed(description=f"❌ A channel <#{new_channel.id}> already exists on the server"
                                     f" and does not appear to be a Community channel."
                                     f" Please choose a different name for your Community channel.", color=constants.EMBED_COLOUR_ERROR)
-                await interaction.response.send_message(embed=embed)
-                return
+                return await interaction.response.send_message(embed=embed)
 
         else:
             # channel does not exist, create it
@@ -517,6 +494,69 @@ class CTeamCommands(commands.Cog):
         await _openclose_community_channel(interaction, open)
 
 
+    # rename a community channel and role
+    @app_commands.command(name="rename_community_channel",
+        description="Use in a Community Channel to change the name of its channel and associated role.", )
+    @app_commands.describe(new_name='The updated name for this community channel/role.',
+                           new_emoji='Optional: pick an emoji to go at the start of the channel/role name.')
+    @check_roles([cmentor_role(), admin_role(), cc_role()]) # allow owners to open/close their own channels
+    async def _rename_community_channel(self, interaction:  discord.Interaction, new_name: str, new_emoji: str = None):
+        print(f"{interaction.user.name} used /rename_community_channel in {interaction.channel.name}")
+        try:
+            old_channel_name = interaction.channel.name
+
+            embed = discord.Embed(
+                description="⏳ Please wait a moment...",
+                color=constants.EMBED_COLOUR_QU
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True) # tell the user we're working on it
+
+            # check the user has authority to do this
+            community_carrier = await _community_channel_owner_check(interaction)
+            if not community_carrier:
+                await interaction.delete_original_response()
+                return
+
+            # process the new channel/role name
+            new_channel_name = await _cc_name_string_check(interaction, new_emoji, new_name)
+
+            # check it's not in use
+            existing_channel = discord.utils.get(interaction.guild.channels, name=new_channel_name)
+            if existing_channel:
+                error=f'<#{existing_channel.id}> already exists. Please choose another.'
+                await interaction.delete_original_response()
+                try:
+                    raise CustomError(error)
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+            existing_role = discord.utils.get(interaction.guild.roles, name=new_channel_name)
+            if existing_role:
+                error=f'<@&{existing_role.id}> already exists. Please choose another.'
+                await interaction.delete_original_response()
+                try:
+                    raise CustomError(error)
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            # confirm user choice
+            view = ConfirmRenameCC(community_carrier, old_channel_name, new_channel_name)
+
+            embed = discord.Embed(
+                title='Confirm Rename',
+                description=f"`{old_channel_name}` ▶ `{new_channel_name}`",
+                color=constants.EMBED_COLOUR_QU
+            )
+            await interaction.edit_original_response(embed=embed, view=view)
+            view.message = await interaction.original_response()
+
+        except Exception as e:
+            await interaction.delete_original_response()
+            traceback.print_exc()
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
     # send a notice from a Community Carrier owner to their 'crew' - this is the long form command using a modal
     @app_commands.command(name="send_notice",
         description="Private command: Used by Community Channel owners to send notices to their participants.", )
@@ -524,7 +564,8 @@ class CTeamCommands(commands.Cog):
     async def _send_notice(self, interaction:  discord.Interaction):
         print(f"{interaction.user.name} used /send_notice in {interaction.channel.name}")
 
-        community_carrier = await _send_notice_channel_check(interaction)
+        # check the user has authority to do this
+        community_carrier = await _community_channel_owner_check(interaction)
         if not community_carrier: return
 
         # create a modal to take the message

@@ -47,7 +47,7 @@ setup(
         'discord.py>=2.3.0',
         # 'idna==3.1',
         # 'multidict==5.1.0',
-        'Pillow==9.3.0',
+        'Pillow==10.0.1',
         'python-dotenv==0.15.0',
         # 'pytz==2021.1',
         'typing-extensions==3.7.4.3',

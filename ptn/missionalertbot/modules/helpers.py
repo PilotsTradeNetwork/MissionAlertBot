@@ -8,7 +8,7 @@ Depends on: constants, ErrorHandler, database
 # import libraries
 import asyncio
 from datetime import datetime, timezone
-from functools import wraps
+import emoji
 import random
 import re
 import sys
@@ -20,6 +20,7 @@ from discord.errors import HTTPException, Forbidden, NotFound
 from discord.ext import commands
 
 # import local classes
+from ptn.missionalertbot.classes.ChannelDefs import ChannelDefs
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 
 # import local constants
@@ -30,8 +31,9 @@ from ptn.missionalertbot.constants import bot, cc_role, get_overwrite_perms, get
     reddit_flair_mission_start, reddit_flair_mission_stop
 
 # import local modules
-from ptn.missionalertbot.database.database import find_community_carrier, CCDbFields, carrier_db, carrier_db_lock, carriers_conn, delete_community_carrier_from_db
-from ptn.missionalertbot.modules.ErrorHandler import CommandChannelError, CommandRoleError
+from ptn.missionalertbot.database.database import find_community_carrier, CCDbFields, carrier_db, carrier_db_lock, carriers_conn, delete_community_carrier_from_db, \
+    find_carrier, CarrierDbFields
+from ptn.missionalertbot.modules.ErrorHandler import CommandChannelError, CommandRoleError, CustomError, on_generic_error
 
 
 # trio of helper functions to check a user's permission to run a command based on their roles, and return a helpful error if they don't have the correct role(s)
@@ -532,6 +534,43 @@ async def _cc_role_delete(interaction, role_id, embed):
 
 
 """
+Helper to assemble a community channel name from user input
+"""
+async def _cc_name_string_check(interaction: discord.Interaction, channel_emoji, channel_name):
+    # trim emojis to 1 character
+    emoji_string = channel_emoji[:1] if not channel_emoji == None else None
+
+    # PROCESS: check for valid emoji
+    print(emoji.is_emoji(emoji_string))
+    if not emoji.is_emoji(emoji_string) and not emoji_string == None:
+        error = "Invalid emoji supplied. Use a valid Unicode emoji from your emoji keyboard, " \
+                "or leave the field blank. **Discord custom emojis will not work**"
+        print('Invalid emoji')
+        try:
+            raise CustomError(error)
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    # PROCESS: remove unusable characters and render to lowercase
+    stripped_channel_name = _regex_alphanumeric_with_hyphens(channel_name.lower())
+
+    # check the channel name isn't too long
+    if len(stripped_channel_name) > 30:
+        error = "Channel name should be fewer than 30 characters. (Preferably a *lot* fewer.)"
+        print('Channel name too long')
+        try:
+            raise CustomError(error)
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    # join with the emoji
+    new_channel_name = emoji_string + stripped_channel_name if not emoji_string == None else stripped_channel_name
+    print(f"Candidate channel name: {new_channel_name}")
+
+    return new_channel_name
+
+
+"""
 Open/close community channels helper
 """
 
@@ -578,21 +617,23 @@ async def _openclose_community_channel(interaction: discord.Interaction, open):
 
 
 """
-send_notice helper
+CC authority checker
 """
 
-
-# helper function shared by the send_notice commands
-async def _send_notice_channel_check(interaction):
+# helper function shared by the various CC commands
+async def _community_channel_owner_check(interaction):
     # check if we're in a community channel
     carrier_db.execute(f"SELECT * FROM community_carriers WHERE "
                     f"channelid = {interaction.channel.id}")
     community_carrier = CommunityCarrierData(carrier_db.fetchone())
     # error if not
     if not community_carrier:
-        embed = discord.Embed(description=f"Error: This does not appear to be a community channel.", color=constants.EMBED_COLOUR_ERROR)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+        error = "This does not appear to be a community channel."
+        print(f'❌ {error}')
+        try:
+            raise CustomError(error)
+        except Exception as e:
+            return await on_generic_error(interaction, e)
 
     elif community_carrier:
         print(f"Found data: {community_carrier.owner_id} owner of {community_carrier.channel_id}")
@@ -624,19 +665,6 @@ def convert_str_to_float_or_int(element: any) -> bool: # this code turns a STR i
         return False
 
 
-# a class to hold channel definitions for training mode
-class ChannelDefs:
-    def __init__(self, category_actual, alerts_channel_actual, mission_command_channel_actual, upvotes_channel_actual, wine_loading_channel_actual, wine_unloading_channel_actual, sub_reddit_actual, reddit_flair_in_progress, reddit_flair_completed):
-        self.category_actual = category_actual
-        self.alerts_channel_actual = alerts_channel_actual
-        self.mission_command_channel_actual = mission_command_channel_actual
-        self.upvotes_channel_actual = upvotes_channel_actual
-        self.wine_loading_channel_actual = wine_loading_channel_actual
-        self.wine_unloading_channel_actual = wine_unloading_channel_actual
-        self.sub_reddit_actual = sub_reddit_actual
-        self.reddit_flair_in_progress = reddit_flair_in_progress
-        self.reddit_flair_completed = reddit_flair_completed
-
 # check whether CCO command is being used in training or live categories
 def check_training_mode(interaction: discord.Interaction):
     if interaction.channel.category.id == training_cat():
@@ -652,6 +680,85 @@ def check_training_mode(interaction: discord.Interaction):
 
     return training, channel_defs
 
+# identify PTN carrier details from a string
+def extract_carrier_ident_strings(message: discord.Message):
+    """
+    Searches for matches to the format "PTN Carrier Name (IDX-NUM)
+
+    param message_content: the content of the message to search
+    returns: a list of matched pairs of name/ID
+    """
+    # regex to match the strings
+    pattern = r'(P\.?T\.?N\.?\s+[^)]+?)\s+\((\w{3}-\w{3})\)'
+    shortname_pattern = r'(P\.?T\.?N\.?)'
+
+    # find all matching occurrences in the message content
+    matches = re.findall(pattern, message.content)
+
+    # extract the matched strings into separate variables
+    extracted_strings = []
+
+    index = 0
+
+    # make sure each match is a pair
+    for match in matches:
+        if len(match) == 2:
+            ptn_string = str(match[0])
+            bracket_string = str(match[1])
+            print(f'Found matching pair in message: {ptn_string} ({bracket_string})')
+            # extract a shortname
+            shortname_string = re.sub(shortname_pattern, '', ptn_string)
+            shortname_string = shortname_string.lower().replace(" ", "")
+
+            # create a channel name
+            stripped_name = _regex_alphanumeric_with_hyphens(ptn_string).lower()
+
+            # attach to list as a dict
+            extracted_strings.append({
+                'index': index,
+                'long_name': ptn_string.upper(),
+                'carrier_id': bracket_string.upper(),
+                'short_name': shortname_string.lower(),
+                'channel_name': stripped_name.lower(),
+                'owner_id': message.author.id
+            })
+            index += 1
+        else:
+            print(f'Ignoring {match}: no pair found')
+
+    return extracted_strings
+
+
+# find a carrier by successively searching ID, long name, and short name
+def flexible_carrier_search_term(search_term):
+    # check if the carrier can be found, exit gracefully if not
+    int_search_term = None
+    carrier_data = None
+
+    if re.match(r"\w{3}-\w{3}", search_term):
+        print("⏳ Carrier Registration format matched, searching by cid...")
+        carrier_data = find_carrier(search_term, CarrierDbFields.cid.name)
+
+    else:
+        try:
+            # check if its an int that can represent a database entry ID
+            int_search_term = int(search_term)
+        except ValueError:
+            print("❕ Searchterm is not a db ID")
+            pass
+
+        if int_search_term:
+            print("⏳ Searching for carrier by database entry ID")
+            carrier_data = find_carrier(search_term, CarrierDbFields.p_id.name)
+
+        else:
+            print("⏳ Searching for carrier by full name fragment")
+            carrier_data = find_carrier(search_term, CarrierDbFields.longname.name)
+            if not carrier_data:
+                print("⏳ Not found. Searching again by shortname...")
+                carrier_data = find_carrier(search_term, CarrierDbFields.shortname.name)
+
+    return carrier_data
 
 # presently unused
 # TODO: remove or incorporate

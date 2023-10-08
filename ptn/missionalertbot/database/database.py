@@ -427,8 +427,9 @@ async def add_carrier_to_database(short_name, long_name, carrier_id, channel, ch
     await carrier_db_lock.acquire()
     try:
         carrier_db.execute(''' INSERT INTO carriers VALUES(NULL, ?, ?, ?, ?, ?, ?, strftime('%s','now')) ''',
-                           (short_name.lower(), long_name.upper(), carrier_id.upper(), channel, channel_id, owner_id))
+                           (short_name, long_name, carrier_id, channel, channel_id, owner_id))
         carriers_conn.commit()
+        print(f'Added {long_name} to database')
     finally:
         carrier_db_lock.release()
 
@@ -481,6 +482,19 @@ async def _update_carrier_details_in_database(carrier_data, original_name):
             WHERE longname LIKE (?) ''', data
         )
 
+        carriers_conn.commit()
+    finally:
+        carrier_db_lock.release()
+
+
+# update carrier last trade time
+async def _update_carrier_last_trade(pid):
+    await carrier_db_lock.acquire()
+    try:
+        carrier_db.execute(
+            ''' UPDATE carriers
+            SET lasttrade=strftime('%s','now')
+            WHERE p_ID=? ''', ( [ pid ] ))
         carriers_conn.commit()
     finally:
         carrier_db_lock.release()
@@ -596,13 +610,29 @@ def find_carriers_mult(searchterm, searchfield):
     :rtype: list[CarrierData]
     """
     carrier_db.execute(
-        f"SELECT * FROM carriers WHERE {searchfield} LIKE (?)", (f'%{searchterm}%',)
+        f"SELECT * FROM carriers WHERE {searchfield} LIKE (?) AND shortname != ownerid", (f'%{searchterm}%',)
     )
     carrier_data = [CarrierData(carrier) for carrier in carrier_db.fetchall()]
     for carrier in carrier_data:
         print(f"FC {carrier.pid} is {carrier.carrier_long_name} {carrier.carrier_identifier} called by "
               f"shortname {carrier.carrier_short_name} with channel <#{carrier.channel_id}> "
               f"and owner {carrier.ownerid} called from find_carriers_mult.")
+
+    return carrier_data
+
+
+def find_opt_ins():
+    """
+    Returns all carriers matching the opt-in marker designation.
+    """
+    carrier_db.execute(
+        f"SELECT * FROM carriers WHERE cid LIKE (?)", (f'%{constants.OPT_IN_ID}%',)
+    )
+    carrier_data = [CarrierData(carrier) for carrier in carrier_db.fetchall()]
+    for carrier in carrier_data:
+        print(f"FC {carrier.pid} is {carrier.carrier_long_name} {carrier.carrier_identifier} called by "
+              f"shortname {carrier.carrier_short_name} with channel <#{carrier.channel_id}> "
+              f"and owner {carrier.ownerid} called from find_opt_ins.")
 
     return carrier_data
 

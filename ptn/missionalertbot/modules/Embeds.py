@@ -13,7 +13,8 @@ from time import strftime
 import discord
 
 # import local classes
-import ptn.missionalertbot.classes.CarrierData as CarrierData
+from ptn.missionalertbot.classes.CarrierData import CarrierData
+from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 
 # import local constants
 import ptn.missionalertbot.constants as constants
@@ -238,7 +239,7 @@ def confirm_grant_role_embed(user, role):
     return embed
 
 # embed to feedback that a user had a role removed
-def role_removed_embed(interaction, user, role):
+def role_removed_embed(interaction: discord.Interaction, user, role):
     print("Called role_removed_embed")
     desc = f"""
     ✅ Removed the <@&{role.id}> role from <@{user.id}>.
@@ -256,6 +257,34 @@ def role_removed_embed(interaction, user, role):
         command_name = ""
 
     desc = f"<@{interaction.user.id}> removed the <@&{role.id}> role from <@{user.id}>" + command_name
+
+    bot_spam_embed = discord.Embed (
+        description=desc,
+        color=constants.EMBED_COLOUR_OK
+    )
+
+    print("Returning embed")
+    return embed, bot_spam_embed
+
+# embeds to feed back CC channel rename
+def cc_renamed_embed(interaction, old_channel_name, community_carrier: CommunityCarrierData):
+    print("Called cc_renamed_embed")
+    desc = f"""
+    ✅ Updated names: <#{community_carrier.channel_id}> • <@&{community_carrier.role_id}>.
+    """
+    embed = discord.Embed (
+        description=desc,
+        color=constants.EMBED_COLOUR_OK
+    )
+
+    try:
+        print("Checking for command name...")
+        command_name = f" using `{interaction.command.name}`"
+    except:
+        print("Command name not accessible")
+        command_name = ""
+
+    desc = f"<@{interaction.user.id}> renamed <#{community_carrier.channel_id}> • <@&{community_carrier.role_id}> (was `{old_channel_name}`)" + command_name
 
     bot_spam_embed = discord.Embed (
         description=desc,

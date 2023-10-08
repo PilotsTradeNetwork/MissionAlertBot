@@ -4,6 +4,7 @@ Commands for use by CCOs
 """
 # import libraries
 import aiohttp
+import traceback
 from typing import Union
 
 # import discord.py
@@ -15,19 +16,20 @@ from discord.ext.commands import GroupCog
 
 # import local constants
 import ptn.missionalertbot.constants as constants
-from ptn.missionalertbot.constants import bot, mission_command_channel, certcarrier_role, trainee_role, seconds_long, rescarrier_role, commodities_common, bot_spam_channel, \
-    training_mission_command_channel, seconds_very_short, admin_role, mod_role, cco_mentor_role, aco_role, recruit_role
+from ptn.missionalertbot.constants import bot, mission_command_channel, certcarrier_role, trainee_role, seconds_long, rescarrier_role, commodities_common, \
+    bot_spam_channel, training_mission_command_channel, seconds_very_short, admin_role, mod_role, cco_mentor_role, aco_role, recruit_role
 
 # import local classes
 from ptn.missionalertbot.classes.MissionParams import MissionParams
 from ptn.missionalertbot.classes.Views import ConfirmRemoveRoleView, ConfirmGrantRoleView
 
 # import local modules
-from ptn.missionalertbot.database.database import find_mission, find_webhook_from_owner, add_webhook_to_database, find_webhook_by_name, delete_webhook_by_name, CarrierDbFields, find_carrier
-from ptn.missionalertbot.modules.DateString import get_mission_delete_hammertime
+from ptn.missionalertbot.database.database import find_mission, find_webhook_from_owner, add_webhook_to_database, find_webhook_by_name, delete_webhook_by_name, \
+    CarrierDbFields, find_carrier, _update_carrier_last_trade, add_carrier_to_database
+from ptn.missionalertbot.modules.DateString import get_mission_delete_hammertime, get_inactive_hammertime
 from ptn.missionalertbot.modules.Embeds import role_granted_embed, confirm_remove_role_embed, role_already_embed, confirm_grant_role_embed
 from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, on_generic_error, GenericError, CustomError
-from ptn.missionalertbot.modules.helpers import convert_str_to_float_or_int, check_command_channel, check_roles, check_training_mode
+from ptn.missionalertbot.modules.helpers import convert_str_to_float_or_int, check_command_channel, check_roles, check_training_mode, flexible_carrier_search_term
 from ptn.missionalertbot.modules.ImageHandling import assign_carrier_image
 from ptn.missionalertbot.modules.MissionGenerator import confirm_send_mission_via_button
 from ptn.missionalertbot.modules.MissionCleaner import _cleanup_completed_mission
@@ -155,7 +157,7 @@ async def cco_mission_complete(interaction, carrier, is_complete, message):
         f'{current_channel}')
 
     # resolve the carrier from the carriers db
-    carrier_data = find_carrier(carrier, CarrierDbFields.longname.name)
+    carrier_data = flexible_carrier_search_term(carrier)
     if not carrier_data:  # error condition
         try:
             error = f"No carrier found for '**{carrier}**.'"
@@ -278,7 +280,13 @@ class CCOCommands(commands.Cog):
 
         mission_params.print_values()
 
-        await confirm_send_mission_via_button(interaction, mission_params)
+        try:
+
+            await confirm_send_mission_via_button(interaction, mission_params)
+
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
 
 
     # unload subcommand
@@ -328,7 +336,13 @@ class CCOCommands(commands.Cog):
 
         mission_params.print_values()
 
-        await confirm_send_mission_via_button(interaction, mission_params)
+        try:
+
+            await confirm_send_mission_via_button(interaction, mission_params)
+
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
 
 
     @cco_group.command(name='edit', description='Enter the details you wish to change for a mission in progress.')
@@ -359,7 +373,7 @@ class CCOCommands(commands.Cog):
             # find the target carrier
             print("Looking for carrier data")
             try:
-                carrier_data = find_carrier(carrier, CarrierDbFields.longname.name)
+                carrier_data = flexible_carrier_search_term(carrier)
                 if not carrier_data:
                     raise CustomError(f"No carrier found matching {carrier}.")
             except CustomError as e:
@@ -474,7 +488,7 @@ class CCOCommands(commands.Cog):
     @check_roles([certcarrier_role(), trainee_role(), rescarrier_role()])
     @check_command_channel([mission_command_channel(), training_mission_command_channel()])
     async def image(self, interaction: discord.Interaction, carrier: str):
-        print(f"{interaction.user.display_name} called m.carrier_image for {carrier}")
+        print(f"{interaction.user.display_name} called /cco image for {carrier}")
 
 
         embed = discord.Embed(
@@ -489,6 +503,68 @@ class CCOCommands(commands.Cog):
         await assign_carrier_image(interaction, carrier, embeds)
 
         return
+
+
+    # set active status
+    @cco_group.command(name='active', description='Toggle active CCO status; becoming active grants the CCO role for at least 28 days.')
+    @check_roles([certcarrier_role(), rescarrier_role()])
+    async def cco_active(self, interaction: discord.Interaction):
+        print(f"{interaction.user} called /cco active")
+
+        try:
+
+            embed = discord.Embed(
+                description="⏳ Please wait a moment...",
+                color=constants.EMBED_COLOUR_QU
+            )
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            # check if they have the CCO role
+            print("⏳ Checking for CCO role...")
+            cco_role = discord.utils.get(interaction.guild.roles, id=certcarrier_role())
+            if cco_role in interaction.user.roles:
+                print("▶ CCO role found. Transitioning user to inactive status.")
+                # check they have the Fleet Reserve role
+                reserve_role = discord.utils.get(interaction.guild.roles, id=rescarrier_role())
+                if reserve_role not in interaction.user.roles:
+                    print("⏳ No reserve role found. Adding...")
+                    # grant the reserve role
+                    await interaction.user.add_roles(reserve_role)
+                # remove the CCO role
+                print("▶ Removing CCO role")
+                await interaction.user.remove_roles(cco_role)
+                embed.description = f'💤 **Removed your <@&{cco_role.id}>** role. You are now marked inactive in the <@&{reserve_role.id}>.'
+                embed.set_footer(text='You can return to active status at any time by using this command again.')
+                embed.color = constants.EMBED_COLOUR_OK
+
+            else:
+                print("▶ No CCO role found. Transitioning user to active status.")
+                await interaction.user.add_roles(cco_role)
+                print("✅ Granted CCO role.")
+
+                # check if user has an opt-in entry yet
+                carrier_data = find_carrier(interaction.user.id, CarrierDbFields.shortname.name)
+                if carrier_data:
+                    print(f"Found opt-in database entry for {interaction.user}, updating lasttrade...")
+                    await _update_carrier_last_trade(carrier_data.pid)
+                else:
+                    print("No opt-in entry found, creating now.")
+                    await add_carrier_to_database(interaction.user.id, interaction.user.name, constants.OPT_IN_ID, interaction.user.name + '-opt-in-marker', 0, interaction.user.id)
+
+                embed.description = f'⚡ **Gave you the <@&{cco_role.id}>** role. You will remain active until at least {get_inactive_hammertime()}. If you run any trade missions with' \
+                            f' <@{bot.user.id}> during this period, your 28-day timer will reset from the time of each trade mission. '
+                embed.set_footer(text='You can return to inactive status at any time by using this command again.')
+                embed.color = constants.EMBED_COLOUR_OK
+
+            await interaction.edit_original_response(embed=embed)
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
 
     """
     Webhook management

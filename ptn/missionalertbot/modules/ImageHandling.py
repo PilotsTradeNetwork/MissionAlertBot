@@ -23,6 +23,7 @@ from ptn.missionalertbot.constants import bot, REG_FONT, NAME_FONT, TITLE_FONT, 
 # import local modules
 from ptn.missionalertbot.modules.DateString import get_formatted_date_string
 from ptn.missionalertbot.database.database import find_carrier, CarrierDbFields
+from ptn.missionalertbot.modules.helpers import flexible_carrier_search_term
 
 
 # function to overlay carrier image with background template for Reddit
@@ -139,7 +140,8 @@ def cleanup_temp_image_file(file_name):
 # function to assign or change a carrier image file
 async def assign_carrier_image(interaction: discord.Interaction, lookname, original_embeds):
     print('assign_carrier_image called')
-    carrier_data = find_carrier(lookname, CarrierDbFields.longname.name)
+
+    carrier_data = flexible_carrier_search_term(lookname)
 
     # check carrier exists
     if not carrier_data:

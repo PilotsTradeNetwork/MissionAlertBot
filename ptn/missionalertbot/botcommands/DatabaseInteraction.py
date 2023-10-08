@@ -4,7 +4,6 @@ A Cog for commands that are primarily concerned with the bot's databases.
 """
 
 # import libraries
-import aiohttp
 import asyncio
 import copy
 import os
@@ -16,20 +15,69 @@ from discord import app_commands
 from discord.ext import commands
 
 # local classes
+from ptn.missionalertbot.classes.CarrierData import CarrierData
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 from ptn.missionalertbot.classes.NomineesData import NomineesData
-from ptn.missionalertbot.classes.Views import db_delete_View, BroadcastView, CarrierEditView, MissionDeleteView
+from ptn.missionalertbot.classes.Views import db_delete_View, BroadcastView, CarrierEditView, MissionDeleteView, AddCarrierButtons
 
 # local constants
 import ptn.missionalertbot.constants as constants
-from ptn.missionalertbot.constants import bot, cmentor_role, admin_role, cteam_bot_channel, cteam_bot_channel, bot_command_channel, cc_role
+from ptn.missionalertbot.constants import bot, cmentor_role, admin_role, cteam_bot_channel, cteam_bot_channel, bot_command_channel, cc_role, \
+    admin_role, mod_role, bot_spam_channel, fc_complete_emoji
 
 # local modules
-from ptn.missionalertbot.database.database import find_nominee_with_id, carrier_db, CarrierDbFields, CarrierData, find_carrier, backup_database, \
-     add_carrier_to_database, find_carriers_mult, find_commodity, find_community_carrier, CCDbFields, find_mission
-from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error
-from ptn.missionalertbot.modules.helpers import check_roles, check_command_channel, _regex_alphanumeric_with_hyphens
+from ptn.missionalertbot.database.database import find_nominee_with_id, carrier_db, CarrierDbFields, find_carrier, backup_database, \
+    add_carrier_to_database, find_carriers_mult, find_commodity, find_community_carrier, CCDbFields, find_mission, find_opt_ins
+from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, CustomError, on_generic_error, GenericError
+from ptn.missionalertbot.modules.helpers import check_roles, check_command_channel, _regex_alphanumeric_with_hyphens, extract_carrier_ident_strings
 from ptn.missionalertbot.modules.Embeds import _add_common_embed_fields, _configure_all_carrier_detail_embed
+from ptn.missionalertbot.modules.DateString import get_inactive_hammertime
+
+
+@bot.tree.context_menu(name='Add Carrier')
+@check_roles([admin_role()])
+async def add_carrier(interaction:  discord.Interaction, message: discord.Message):
+    print(f"add_carrier called by {interaction.user.display_name} for {message.author.display_name}")
+
+    embed = discord.Embed(
+        description="⏳ Please wait a moment...",
+        color=constants.EMBED_COLOUR_QU
+    )
+
+    await interaction.response.send_message(embed=embed)
+
+    # extract matching strings from message
+    carrier_details: dict = extract_carrier_ident_strings(message)
+
+    if not carrier_details:
+        try:
+            error = f"No valid carrier details found in {message.jump_url}. Details should be in format " \
+                     "`P.T.N. Full Name (ABC-123)` (Any variation on 'PTN' is fine)"
+            await interaction.delete_original_response()
+            raise CustomError(error, False)
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    # print the extracted values
+    for details in carrier_details:
+        long_name = details['long_name']
+        carrier_id = details['carrier_id']
+        short_name = details['short_name']
+        index = details['index']
+        owner_id = details['owner_id']
+        channel_name = details['channel_name']
+        print(f"Index {index} is '{long_name}' ({carrier_id}) with generated shortname {short_name}")
+        embed.add_field(name=f'Match {index+1}', value=f'Longname: `{long_name}` • Shortname: `{short_name}` • ID: `{carrier_id}` • Owner: <@{owner_id}> • ChannelName: #`{channel_name}`', inline=False)
+
+    # TODO check no two fields are identical
+
+    embed.title="🔎 CARRIER DETAILS FOUND IN MESSAGE"
+    embed.description=None
+
+    view = AddCarrierButtons(message, carrier_details)
+
+    await interaction.edit_original_response(embed=embed, view=view)
+    view.message = await interaction.original_response()
 
 
 
@@ -251,6 +299,7 @@ class DatabaseInteraction(commands.Cog):
             return await interaction.response.send_message(f'ERROR: Invalid owner ID. Expected an ID in the format `824243421145333770`, received `{owner_id}`.', ephemeral=True)
 
         # Only add to the carrier DB if it does not exist, if it does exist then the user should not be adding it.
+        # TODO: merge with Add Carrier
         carrier_data = find_carrier(long_name, CarrierDbFields.longname.name)
         if carrier_data:
             # Carrier exists already, go skip it.
@@ -266,8 +315,8 @@ class DatabaseInteraction(commands.Cog):
         # now generate a string to use for the carrier's channel name based on its long name
         stripped_name = _regex_alphanumeric_with_hyphens(long_name)
 
-        # find carrier owner as a user object
-
+        # find carrier owner as a user object so we know they're a valid user
+        # TODO: move error to handler
         try:
             owner = await bot.fetch_user(owner_id)
             print(f"Owner identified as {owner.display_name}")
@@ -275,7 +324,8 @@ class DatabaseInteraction(commands.Cog):
             raise EnvironmentError(f'Could not find Discord user matching ID {owner_id}')
 
         # finally, send all the info to the db
-        await add_carrier_to_database(short_name, long_name, carrier_id, stripped_name.lower(), 0, owner_id)
+        # TODO: merge with Add Carrier
+        await add_carrier_to_database(short_name.lower(), long_name.upper(), carrier_id.upper(), stripped_name.lower(), 0, owner_id)
 
         carrier_data = find_carrier(long_name, CarrierDbFields.longname.name)
         info_embed = discord.Embed(title="Fleet Carrier successfully added to database",
@@ -290,7 +340,17 @@ class DatabaseInteraction(commands.Cog):
 
         embeds = [info_embed, cp_embed]
 
-        return await interaction.response.send_message(embeds=embeds)
+        await interaction.response.send_message(embeds=embeds)
+
+        # notify bot-spam
+        spamchannel: discord.TextChannel = bot.get_channel(bot_spam_channel())
+        message: discord.Message = await interaction.original_response()
+        embed = discord.Embed(
+            description=f"<:fc_complete:{fc_complete_emoji()}> **NEW FLEET CARRIER** added by <@{interaction.user.id}> at {message.jump_url}",
+            color=constants.EMBED_COLOUR_OK
+        )
+        embed = _add_common_embed_fields(embed, carrier_data, interaction)
+        return await spamchannel.send(embed=embed)
 
 
     # remove FC from database
@@ -778,6 +838,46 @@ class DatabaseInteraction(commands.Cog):
 
         except TypeError as e:
             print('Error: {}'.format(e))
+
+
+    # monitor CCO opt-ins
+    @app_commands.command(name="admin_list_optins",
+                          description="Private command: Use to view CCO active opt-ins.")
+    async def _admin_list_optins(self, interaction: discord.Interaction):
+
+        try:
+            print('⏳ Searching for opt-in markers in db...')
+            # look for matches for the owner ID in the carrier DB
+            carrier_list = find_opt_ins()
+
+            if not carrier_list:
+                await interaction.response.send_message(f"No opt-ins found.", ephemeral=True)
+                return print(f"✖ No opt-ins found.")
+
+            else:
+                print("▶ Returning list of opt-ins")
+                embed = discord.Embed(
+                    title=f"⚡ LISTING CCO OPT-INS",
+                    color=constants.EMBED_COLOUR_OK
+                )
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                for carrier_data in carrier_list:
+                    hammertime = get_inactive_hammertime(carrier_data.lasttrade)
+                    embed = discord.Embed(
+                        description=f'User **{carrier_data.carrier_long_name}** <@{carrier_data.ownerid}> at DBID {carrier_data.pid}' \
+                                    f' opted-in at <t:{carrier_data.lasttrade}>. Expires {hammertime}.',
+                        color=constants.EMBED_COLOUR_QU
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await asyncio.sleep(1) # lip service to try to avoid a rate limit
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
 
 
     """

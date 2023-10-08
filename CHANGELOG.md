@@ -1,5 +1,55 @@
 # Changelog
 
+## 2.3.0
+New commands:
+- [#579](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/579) `/cco active` - toggles Active status for CCOs; CCOs set to active this way will not have the role removed for at least 28 days. Permissions: CCO, Fleet Reserve.
+- [#577](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/577) `/rename_community_channel` - used in a Community Channel to rename both the channel and the role. Permissions: Community Mentor, Community Channel Owner.
+- [#597](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/597) `Add Carrier` - Context Menu -> Message. Attempts to match PTN carrier name/ID format from a message and give the option of adding any matches to the database. Permissions: Council.
+- `/admin_opt_in` - List all CCO opt-ins. (This is for database maintenance purposes.) Permissions: Council. 
+
+CCO command behaviour changes:
+- [#578](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/578) `/cco load` `/cco unload` `/cco image` `/cco complete` will now accept any of the following as carrier search terms: full name partial string (as per default behaviour prior to 2.3.0); shortname; carrier registration (e.g. K8Y-T2G); carrier database entry number (discoverable via `/find`)
+- `/cco load` `/cco unload` mission send select menu has been replaced with buttons:
+    - Buttons provide visual feedback as to which sends are seleted: selected sends are blue, deselected are grey, disabled are greyed out (faded and not clickable)
+    - Default sends remain the same
+    - Buttons can be clicked to toggle a send on/off
+    - Clicking the "EDMC-OFF" button will toggle the EDMC-off option, and reset send options to default for the currently active profile (i.e. EDMC-OFF: ping, no external sends, EDMC-ON: ping, external sends)
+    - Clicking the "Send" button will send using all enabled sends, rather than sending to all by default
+    - Option to select Webhook sends will be greyed out if user has no registered webhooks
+    - External sends (Reddit, Webhooks) will be greyed out if profit is < 10k
+    - A warning will display when profit is < 10k
+    - "Notify Haulers" will be available but deselected by default if profit is < 10k
+- [#600](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/600) The 'Set Message' button for `/cco load` `/cco unload` `/cco edit` now remembers your message, if any. It can also be submitted blank to erase the currently-set message.
+    - Better feedback from 'Set Message': The message will now display continuously after being set, rather than disappearing if the user changes options.
+- `/cco edit` will now re-send Discord alerts and messages if found to be missing
+- [#593](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/593) All Reddit interactions will now abandon and return appropriate errors after a certain amount of time
+- [#588](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/588) Added cAPI information and ;stock inara command to local mission information embed, unless mission is flagged EDMC-OFF
+
+CCO Wine load changes:
+- Wine loads are now affected by the state of the Booze Cruise #wine-cellar-loading channel
+    - open is considered "BC active"
+        - a notice appears when posting a Wine load under BC conditions
+    - closed is considered "BC inactive"
+- Wine loads posted under BC inactive conditions are considered normal trades and will send to #official-trade-alerts
+- Wine loads are no longer prohibited from external sends
+- Non-BC Wine loads no longer skip Hauler pings
+    - Pings are disabled for BC Wine loads
+- EDMC-OFF option disabled for BC Wine loads
+- [#570](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/570) BC Wine load format changed to BC standard format
+    - BC Wine load alerts no longer use embeds
+- [#445](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/445) CCO Message Text will now display directly after BC wine loads as a temporary solution until [#20](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/20) is implemented, to allow posting of Wine + Tritium loads in #wine-cellar-loading
+- [#259](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/259) Wine alerts channel automatically selected based on BC status
+
+Technical changes:
+- ChannelDefs now stored in classes/ChannelDefs.py and relevant type annotation added to MissionParams
+- More type annotation throughout
+- If a role ping is used by `/cco load` or `/cco unload`, the role's ID will be stored in mission_params. This makes mission editing more straightforward.
+- The trade alert channel used by `/cco load` and `/cco unload` is now stored in mission_params. This makes mission cleanup/editing more straightforward.
+- Version number at time of mission creation added to MissionParams to aid with future backwards compatibility tests.
+- [#596](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/596) Fixed TimeoutError -> asyncio.TimeoutError. TimeoutErrors now handled by ErrorHandler.py via their own error class.
+- More errors moved to error handler; better handling of certain errors
+
+
 ## 2.2.7
 - [#590](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/590) (Temporary?) workaround for PRAW websocket error; bumped praw versions
 - [#572](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/572) `/cco complete` now resolves carrier search term against carriers db instead of missions db. (This will make it consistent with all other instances of using a specific search term to look for a carrier.)
@@ -8,9 +58,10 @@
 - [#565](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/565) Update carrier channel mission embed creation to use guild user avatar rather than global
 - [#564](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/564) Archiving community channels now checks for successful permission sync and retries on failure
 - [#563](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/563) Fixed month not updating for image choice purposes
-- [#566](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/566) Fixed unloads showing carrier supply as if it was station demand
-- [#561](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/561) `m.complete` now includes an interactible link for `/mission complete`
+- [#566](https://github.com/PilotsTradeNetwork/MissionAlertBot/ifssues/566) Fixed unloads showing carrier supply as if it was station demand
+- [#561](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/561) `m.complete` now includes an interactable link for `/mission complete`
 - [#560](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/560) Verify Member now includes a jumpurl in the bot-spam notification
+- [#569](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/569) Handle errors caused by users blocking DMs for all role-grant commands
 
 
 ## 2.2.6
