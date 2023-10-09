@@ -179,10 +179,6 @@ class MissionSendView(View):
         button.disabled=True
         print(f"▶ {interaction.user.display_name} is sending their mission with flags {self.mission_params.sendflags}")
 
-        # this isn't really necessary but it's tidier
-        if not self.mission_params.webhook_names:
-            self.mission_params.sendflags.remove('w')
-
         try: # there's probably a better way to do this using an if statement
             self.clear_items()
             await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=self)
