@@ -94,12 +94,13 @@ class MissionSendView(View):
         else:
             self.remove_item(self.notify_wine_loader_select_button)"""
 
-        # disable external sends for low profit loads
-        if self.mission_params.profit < 10:
+        # disable external send buttons for low profit loads or if EDMC-OFF is set
+        if self.mission_params.profit < 10 or 'e' in self.mission_params.sendflags:
             self.reddit_send_select_button.disabled = True
             self.reddit_send_select_button.style=discord.ButtonStyle.secondary
             self.webhooks_send_select_button.disabled = True
             self.webhooks_send_select_button.style=discord.ButtonStyle.secondary
+
 
     # row 0
     """@discord.ui.button(label="Discord", style=discord.ButtonStyle.primary, emoji=f"<:discord:{discord_emoji()}>", custom_id="send_discord", row=0, disabled=True)
@@ -310,6 +311,16 @@ class AddMessageModal(Modal):
 
                 message_embed.title="🗑 MESSAGE REMOVED"
 
+            if self.mission_params.booze_cruise:
+                print("Updating BC alert preview with message")
+                self.mission_params.discord_text = txt_create_discord(interaction, self.mission_params, preview=True)
+                preview_embed: discord.Embed = await return_discord_alert_embed(interaction, self.mission_params)
+                preview_embed.title = '🔎 CONFIRM MISSION DETAILS AND SELECT SENDS'
+                preview_embed.remove_author()
+                if embeds and hasattr(embeds[2], 'title') and 'confirm' in embeds[2].title.lower():
+                    embeds.pop()
+                    embeds.insert(2, preview_embed)
+
             embeds.append(message_embed)
 
             # update our master embeds list
@@ -406,11 +417,13 @@ async def define_commodity(interaction: discord.Interaction, mission_params):
                 await on_generic_error(interaction, e)
 
 
-async def return_discord_alert_embed(interaction, mission_params: MissionParams):
+async def return_discord_alert_embed(interaction: discord.Interaction, mission_params: MissionParams):
     if mission_params.mission_type == 'load':
         embed = discord.Embed(description=mission_params.discord_text, color=constants.EMBED_COLOUR_LOADING)
+        embed.set_thumbnail(url=constants.ICON_LOADING)
     else:
         embed = discord.Embed(description=mission_params.discord_text, color=constants.EMBED_COLOUR_UNLOADING)
+        embed.set_thumbnail(url=constants.ICON_UNLOADING)
     embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar)
     return embed
 
@@ -435,14 +448,14 @@ async def return_discord_channel_embeds(mission_params: MissionParams):
                         f"\n🌟 System: **{mission_params.system.upper()}**" \
                         f"\n📦 Commodity: **{mission_params.commodity_name.upper()}**"
         
-        buy_thumb = constants.ICON_BUY
+        buy_thumb = constants.ICON_BUY_FROM_STATION
 
         sell_description=f"🎯 Fleet Carrier: **{carrier_data.carrier_long_name}**" \
                          f"\n🔢 Carrier ID: **{carrier_data.carrier_identifier}**" \
                          f"\n💰 Profit: **{mission_params.profit}K PER TON**" \
                          f"\n📥 Demand: **{mission_params.demand}K TONS**"
         
-        sell_thumb = ptn_logo_discord(strftime('%B'))
+        sell_thumb = constants.ICON_SELL_TO_CARRIER
 
         embed_colour = constants.EMBED_COLOUR_LOADING
 
@@ -453,13 +466,13 @@ async def return_discord_channel_embeds(mission_params: MissionParams):
                         f"\n📦 Commodity: **{mission_params.commodity_name.upper()}**" \
                          f"\n📤 Supply: **{mission_params.demand}K TONS**"
 
-        buy_thumb = ptn_logo_discord(strftime('%B'))
+        buy_thumb = constants.ICON_BUY_FROM_CARRIER
 
         sell_description=f"📌 Station: **{mission_params.station.upper()}**" \
                          f"\n🛬 Landing Pad: {pads}" \
                          f"\n💰 Profit: **{mission_params.profit}K PER TON**" \
         
-        sell_thumb = constants.ICON_SELL
+        sell_thumb = constants.ICON_SELL_TO_STATION
 
         embed_colour = constants.EMBED_COLOUR_UNLOADING
 
@@ -1019,15 +1032,20 @@ async def confirm_send_mission_via_button(interaction: discord.Interaction, miss
 
         try:
             # check the details with the user
-            confirm_embed = discord.Embed(
+            """confirm_embed = discord.Embed(
                 title=f"{mission_params.mission_type.upper()}ING: {mission_params.carrier_data.carrier_long_name}",
                 description=f"Confirm mission details and choose send targets for {mission_params.carrier_data.carrier_long_name}.",
                 color=constants.EMBED_COLOUR_QU
             )
-            thumb_url = constants.ICON_FC_LOADING if mission_params.mission_type == 'load' else constants.ICON_FC_UNLOADING
-            confirm_embed.set_thumbnail(url=thumb_url)
+            thumb_url = constants.ICON_LOADING if mission_params.mission_type == 'load' else constants.ICON_UNLOADING
+            confirm_embed.set_thumbnail(url=thumb_url)"""
 
-            confirm_embed = _mission_summary_embed(mission_params, confirm_embed)
+            # confirm_embed = _mission_summary_embed(mission_params, confirm_embed)
+            # 2.3.2: replaced confirm_embed with preview embed. TODO: keep or revert
+            mission_params.discord_text = txt_create_discord(interaction, mission_params, preview=True)
+            preview_embed: discord.Embed = await return_discord_alert_embed(interaction, mission_params)
+            preview_embed.title = '🔎 CONFIRM MISSION DETAILS AND SELECT SENDS'
+            preview_embed.remove_author()
 
             low_profit_embed = None
 
@@ -1066,7 +1084,8 @@ async def confirm_send_mission_via_button(interaction: discord.Interaction, miss
             if low_profit_embed: mission_params.original_message_embeds.append(low_profit_embed) # append the low profit embed
             if bc_embed: mission_params.original_message_embeds.append(bc_embed) # append the BC embed if active
             if webhook_embed: mission_params.original_message_embeds.append(webhook_embed) # append the webhooks embed if user has any
-            mission_params.original_message_embeds.append(confirm_embed)
+            mission_params.original_message_embeds.append(preview_embed)
+            # mission_params.original_message_embeds.append(confirm_embed)
 
             view = MissionSendView(mission_params, interaction.user) # buttons to add
 
@@ -1173,11 +1192,15 @@ async def prepare_for_gen_mission(interaction: discord.Interaction, mission_para
     if mission_params.commodity_name.title() == 'Wine':
         print(f"⏳ Wine load detected, checking BC status by permissions for {mission_params.channel_defs.wine_loading_channel_actual}")
         winechannel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
-        role_to_check = discord.utils.get(interaction.guild.roles, id=pilot_role())
-        print(f"⏳ Checking permissions for role {role_to_check}")
-        mission_params.booze_cruise = winechannel.permissions_for(role_to_check).view_channel
-        print(f"▶ BC status: {mission_params.booze_cruise}")
-        # this only returns true if commodity is wine AND the BC channels are open, otherwise it is false
+        if mission_params.training:
+            # in training mode we count BC status as always true
+            mission_params.booze_cruise = True
+        else:
+            role_to_check = discord.utils.get(interaction.guild.roles, id=pilot_role())
+            print(f"⏳ Checking permissions for role {role_to_check}")
+            mission_params.booze_cruise = winechannel.permissions_for(role_to_check).view_channel
+            print(f"▶ BC status: {mission_params.booze_cruise}")
+            # this only returns true if commodity is wine AND the BC channels are open, otherwise it is false
 
     # add any webhooks to mission_params
     webhook_data = find_webhook_from_owner(interaction.user.id)
@@ -1540,10 +1563,10 @@ async def mission_generation_complete(interaction: discord.Interaction, mission_
     # define return embed colours/icons based on mission type
     if mission_data.mission_type == 'load':
         embed_colour = constants.EMBED_COLOUR_LOADING
-        thumbnail_url = constants.ICON_FC_LOADING
+        thumbnail_url = constants.ICON_LOADING
     else:
         embed_colour = constants.EMBED_COLOUR_UNLOADING
-        thumbnail_url = constants.ICON_FC_UNLOADING
+        thumbnail_url = constants.ICON_UNLOADING
 
     embed = discord.Embed(
         title=f"{mission_data.mission_type.upper()}ING {mission_data.carrier_name} ({mission_data.carrier_identifier})",

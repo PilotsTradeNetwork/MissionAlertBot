@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.2
+- Hotfix for missions not sending if user has no webhooks saved
+- Mission preview now uses trade alert preview
+    - In BC state, message will show in preview embed
+- New graphics (thanks Sim!) to indicate load and unload, used in trade alerts and channel embeds
+- Setting EDMC-OFF disables incompatible buttons (i.e. Reddit, Webhooks)
+- Training mode Wine loads are always considered in BC state
+
+
 ## 2.3.1
 - Fix for BC status not being detected on Live server
 

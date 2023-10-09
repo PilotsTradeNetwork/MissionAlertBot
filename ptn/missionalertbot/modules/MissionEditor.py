@@ -261,7 +261,7 @@ async def edit_active_mission(interaction: discord.Interaction, mission_params, 
         description=f"Please confirm updated mission details for {mission_params.carrier_data.carrier_long_name}.",
         color=constants.EMBED_COLOUR_QU
     )
-    thumb_url = constants.ICON_FC_LOADING if mission_params.mission_type == 'load' else constants.ICON_FC_UNLOADING
+    thumb_url = constants.ICON_LOADING if mission_params.mission_type == 'load' else constants.ICON_UNLOADING
     confirm_embed.set_thumbnail(url=thumb_url)
 
     confirm_embed = _mission_summary_embed(mission_params, confirm_embed)

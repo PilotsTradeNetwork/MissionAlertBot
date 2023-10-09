@@ -23,15 +23,21 @@ TEXT GEN FUNCTIONS
 """
 
 
-def txt_create_discord(interaction: Interaction, mission_params: MissionParams):
-    discord_channel_id = mission_params.mission_temp_channel_id if mission_params.mission_temp_channel_id else mission_params.carrier_data.discord_channel
-    discord_channel = f"<#{discord_channel_id}>"
+def txt_create_discord(interaction: Interaction, mission_params: MissionParams, preview=False):
+    discord_channel_id = mission_params.mission_temp_channel_id if not preview else None
+    discord_channel = f"<#{discord_channel_id}>" if discord_channel_id else f"**#{mission_params.carrier_data.discord_channel}**"
+    emoji = f'<:loading_emoji:{constants.loading_emoji()}>' if mission_params.mission_type == 'load' else f'<:unloading_emoji:{constants.unloading_emoji()}>' 
+
     if hasattr(mission_params, "booze_cruise") and mission_params.booze_cruise: # pre-2.3.0 backwards compatibility
         print("Generating BC wine alert...")
         # **[Carriername (CAR-IDX)]** | @[Cmdr Name] | [Loading System]/[Loading Station] - **[Amount of Wine]k** :wine_glass:+ **[Amount of Tritium]**:oil: @[Purchase Price of Tritium above Gal Avg]k/t
+        if preview:
+            name_link = mission_params.carrier_data.carrier_long_name
+        else:
+            name_link = f"[{mission_params.carrier_data.carrier_long_name}](https://discord.com/channels/{interaction.guild.id}/{discord_channel_id})"
         discord_text = (
             f"{'**★ EDMC-OFF MISSION! ★** : ' if mission_params.edmc_off else ''}"
-            f"**[{mission_params.carrier_data.carrier_long_name}](https://discord.com/channels/{interaction.guild.id}/{discord_channel_id})** "
+            f"**{name_link}** "
             f"**({mission_params.carrier_data.carrier_identifier})** | "
             f" <@{mission_params.carrier_data.ownerid}> | {mission_params.system.title()}/{mission_params.station.title()} - "
             f"**{mission_params.demand}k :wine_glass:**"

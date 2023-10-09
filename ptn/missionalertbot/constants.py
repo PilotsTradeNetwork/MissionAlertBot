@@ -78,6 +78,8 @@ PROD_DEV_CHANNEL = 827656814911815702 # Development channel for MAB on live
 PROD_ROLEAPPS_CHANNEL = 867820665515147293 # role-applications on the live server
 PROD_UPVOTE_EMOJI = 828287733227192403 # upvote emoji on live server
 PROD_O7_EMOJI = 806138784294371368 # o7 emoji on live server
+PROD_UNLOADING_ICON = 1160881163641049178 # unloading_icon on live
+PROD_LOADING_ICON = 1160871046786846780 # loading_icon on live
 PROD_FC_COMPLETE_EMOJI = 878216234653605968 # fc_complete emoji
 PROD_FC_EMPTY_EMOJI = 878216288525242388 # fc_empty emoji
 PROD_DISCORD_EMOJI = 1122605426844905503 # Discord emoji on live
@@ -137,6 +139,8 @@ TEST_DEV_CHANNEL = 1063765215457583164 # Development channel for MAB on test
 TEST_ROLEAPPS_CHANNEL = 1121736676247609394 # role-applications on the test server
 TEST_UPVOTE_EMOJI = 849388681382068225 # upvote emoji on test server
 TEST_O7_EMOJI = 903744117144698950 # o7 emoji on test server
+TEST_UNLOADING_ICON = 1160883198419542077 # unloading_icon on test
+TEST_LOADING_ICON = 1160883199833014362 # loading_icon on test
 TEST_FC_COMPLETE_EMOJI = 884673510067286076 # fc_complete emoji
 TEST_FC_EMPTY_EMOJI = 974747678183424050 # fc_empty emoji
 TEST_DISCORD_EMOJI = 1122605718198026300 # Discord emoji on live
@@ -293,15 +297,17 @@ OPT_IN_ID = 'OPT-INX'
 
 # images and icons used in mission embeds
 BLANKLINE_400PX = 'https://pilotstradenetwork.com/wp-content/uploads/2023/01/400x1-00000000.png'
-ICON_BUY = 'https://pilotstradenetwork.com/wp-content/uploads/2023/05/Trade.png'
-ICON_SELL = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/Credit.png'
+ICON_BUY_FROM_STATION = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_buy_from_station.png'
+ICON_BUY_FROM_CARRIER = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_buy_from_carrier.png'
+ICON_SELL_TO_STATION = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_sell_to_station.png'
+ICON_SELL_TO_CARRIER = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_sell_to_carrier.png'
 ICON_DATA = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/Data.png'
 ICON_DISCORD_CIRCLE = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/discord-icon-in-circle.png'
 ICON_DISCORD_PING = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/discord-notification-dot-icon.png'
 ICON_REDDIT = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/reddit-logo.png'
 ICON_WEBHOOK_PTN = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/discord-webhook-icon-in-circle.png'
-ICON_FC_LOADING = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/fc_loading_thick_sihmm.png'
-ICON_FC_UNLOADING = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/fc_unloading_thick_sihmm.png'
+ICON_LOADING = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/sim_loading_graphic_mab.png'
+ICON_UNLOADING = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/sim_unloading_graphic_mab.png'
 ICON_EDMC_OFF = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/edmc_off_2.jpg'
 ICON_FC_COMPLETE = 'https://pilotstradenetwork.com/wp-content/uploads/2023/05/fc_complete.png'
 ICON_FC_EMPTY = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/fc_empty.png'
@@ -370,6 +376,12 @@ def upvote_emoji():
 
 def o7_emoji():
   return PROD_O7_EMOJI if _production else TEST_O7_EMOJI
+
+def loading_emoji():
+  return PROD_LOADING_ICON if _production else TEST_LOADING_ICON
+
+def unloading_emoji():
+  return PROD_UNLOADING_ICON if _production else TEST_LOADING_ICON
 
 def fc_complete_emoji():
   return PROD_FC_COMPLETE_EMOJI if _production else TEST_FC_COMPLETE_EMOJI

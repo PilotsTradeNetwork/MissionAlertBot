@@ -255,7 +255,7 @@ class CCOCommands(commands.Cog):
         training, channel_defs = check_training_mode(interaction)
 
         cp_embed = discord.Embed(
-            title="COPY/PASTE TEXT FOR THIS COMMAND",
+            title="📋 COPY/PASTE TEXT FOR THIS COMMAND",
             description=f"```/cco load carrier:{carrier} commodity:{commodity} system:{system} station:{station}"
                         f" profit:{profit} pads:{pads} demand:{demand}```",
             color=constants.EMBED_COLOUR_QU
@@ -311,7 +311,7 @@ class CCOCommands(commands.Cog):
         training, channel_defs = check_training_mode(interaction)
 
         cp_embed = discord.Embed(
-            title="COPY/PASTE TEXT FOR THIS COMMAND",
+            title="📋 COPY/PASTE TEXT FOR THIS COMMAND",
             description=f"```/cco unload carrier:{carrier} commodity:{commodity} system:{system} station:{station}"
                         f" profit:{profit} pads:{pads} supply:{supply}```",
             color=constants.EMBED_COLOUR_QU
