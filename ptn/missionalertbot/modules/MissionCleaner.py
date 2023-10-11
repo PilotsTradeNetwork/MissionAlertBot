@@ -11,6 +11,7 @@ import aiohttp
 import asyncio
 import random
 from time import strftime
+import traceback
 
 # import discord.py
 import discord
@@ -370,6 +371,7 @@ async def remove_carrier_channel(interaction: discord.Interaction, completed_mis
             return
 
     except Exception as e:
+        traceback.print_exc()
         try:
             error = f"Unable to delete carrier channel: {e}"
             raise CustomError(error)

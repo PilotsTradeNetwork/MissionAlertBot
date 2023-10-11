@@ -24,9 +24,10 @@ from ptn.missionalertbot.classes.MissionParams import MissionParams
 
 # import local modules
 from ptn.missionalertbot.database.database import _update_mission_in_database
+from ptn.missionalertbot.modules.Embeds import _confirm_edit_mission_embed
 from ptn.missionalertbot.modules.ImageHandling import create_carrier_reddit_mission_image, create_carrier_discord_mission_image
 from ptn.missionalertbot.modules.MissionGenerator import validate_pads, validate_profit, define_commodity, return_discord_alert_embed, return_discord_channel_embeds, \
-    _mission_summary_embed, mission_generation_complete, cleanup_temp_image_file, send_discord_alert, send_discord_channel_message
+    mission_generation_complete, cleanup_temp_image_file, send_discord_alert, send_discord_channel_message
 from ptn.missionalertbot.modules.TextGen import txt_create_discord, txt_create_reddit_title, txt_create_reddit_body
 from ptn.missionalertbot.modules.ErrorHandler import on_generic_error, CustomError, GenericError
 
@@ -87,51 +88,11 @@ class EditConfirmView(View):
         except Exception as e:
             print(e)
 
-    @discord.ui.button(label="Set Message", style=discord.ButtonStyle.secondary, emoji="✍", custom_id="message", row=2)
+    @discord.ui.button(label="Set or Remove Message", style=discord.ButtonStyle.secondary, emoji="✍", custom_id="message", row=2)
     async def message_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         print(f"{interaction.user.display_name} wants to add a message to their mission")
     
         await interaction.response.send_modal(AddMessageModal(self.mission_params, self.original_type, self.confirm_embed, self.author))
-
-    @discord.ui.button(label="Remove Message", style=discord.ButtonStyle.secondary, emoji="🗑", custom_id="remove", row=2)
-    async def remove_message_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        print(f"{interaction.user.display_name} wants to remopve their existing mission message")
-        button.disabled=True
-        print("Define empty embeds list")
-        embeds = []
-        print(embeds)
-        try:
-            embeds.append(self.confirm_embed)
-        except Exception as e:
-            print(e)
-
-        try:
-            if self.mission_params.cco_message_text:
-                print(f"Message found: {self.mission_params.cco_message_text}")
-                embed = discord.Embed(
-                    title="Message will be removed:",
-                    description=self.mission_params.cco_message_text,
-                    color=constants.EMBED_COLOUR_RP
-                )
-                print("Defining new feedback embeds")
-
-                embeds.append(embed)
-                await interaction.response.edit_message(embeds=embeds)
-                print("Set mission message to none")
-                self.mission_params.cco_message_text = None
-
-            else:
-                print("No message found to remove")
-                embed = discord.Embed(
-                    description="No mission message found.",
-                    color=constants.EMBED_COLOUR_ERROR
-                )
-
-                embeds.append(embed)
-                await interaction.response.edit_message(embeds=embeds)
-
-        except Exception as e:
-            print(e)
 
     async def interaction_check(self, interaction: discord.Interaction): # only allow original command user to interact with buttons
         if interaction.user.id == self.author.id:
@@ -178,7 +139,7 @@ class AddMessageModal(Modal):
         super().__init__(title=title, timeout=timeout)
 
     message = discord.ui.TextInput(
-        label='Enter your message below.',
+        label='Enter your message below, or blank to remove.',
         style=discord.TextStyle.long,
         placeholder='Normal Discord markdown works, but mentions and custom emojis require full code.',
         required=False,
@@ -188,7 +149,7 @@ class AddMessageModal(Modal):
     async def on_submit(self, interaction: discord.Interaction):
         print("Message submitted")
         print(self.message.value)
-        
+
         message_embed = discord.Embed(
             color=constants.EMBED_COLOUR_RP
         )
@@ -211,6 +172,11 @@ class AddMessageModal(Modal):
 
             message_embed.title="✖ MESSAGE REMOVED"
 
+        if self.mission_params.booze_cruise:
+            print("Updating BC alert with message")
+            self.mission_params.discord_text = txt_create_discord(interaction, self.mission_params, preview=True)
+            self.confirm_embed = _confirm_edit_mission_embed(self.mission_params)
+
         embeds = []
         embeds.append(self.confirm_embed)
         embeds.append(message_embed)
@@ -224,7 +190,7 @@ class AddMessageModal(Modal):
             print(e)
 
 
-async def edit_active_mission(interaction: discord.Interaction, mission_params, original_commodity, original_type):
+async def edit_active_mission(interaction: discord.Interaction, mission_params: MissionParams, original_commodity, original_type):
     print("Called edit_active_mission")
     mission_params.returnflag = True
 
@@ -256,15 +222,9 @@ async def edit_active_mission(interaction: discord.Interaction, mission_params, 
         await interaction.response.send_message(embed=embed)
         return
 
-    confirm_embed = discord.Embed(
-        title=f"{mission_params.mission_type.upper()}ING: {mission_params.carrier_data.carrier_long_name}",
-        description=f"Please confirm updated mission details for {mission_params.carrier_data.carrier_long_name}.",
-        color=constants.EMBED_COLOUR_QU
-    )
-    thumb_url = constants.ICON_LOADING if mission_params.mission_type == 'load' else constants.ICON_UNLOADING
-    confirm_embed.set_thumbnail(url=thumb_url)
+    mission_params.discord_text = txt_create_discord(interaction, mission_params, preview=True)
 
-    confirm_embed = _mission_summary_embed(mission_params, confirm_embed)
+    confirm_embed = _confirm_edit_mission_embed(mission_params)
 
     mission_params.edit_embed = None
 

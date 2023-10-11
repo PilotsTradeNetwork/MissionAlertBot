@@ -67,7 +67,11 @@ async def add_carrier(interaction:  discord.Interaction, message: discord.Messag
         owner_id = details['owner_id']
         channel_name = details['channel_name']
         print(f"Index {index} is '{long_name}' ({carrier_id}) with generated shortname {short_name}")
-        embed.add_field(name=f'Match {index+1}', value=f'Longname: `{long_name}` • Shortname: `{short_name}` • ID: `{carrier_id}` • Owner: <@{owner_id}> • ChannelName: #`{channel_name}`', inline=False)
+        embed.add_field(
+            name=f"{f'Match {index+1}' if len(carrier_details) > 1 else 'Matched Details'}",
+            value=f'Longname: `{long_name}` • Shortname: `{short_name}` • ID: `{carrier_id}` • Owner: <@{owner_id}> • ChannelName: #`{channel_name}`',
+            inline=False
+        )
 
     # TODO check no two fields are identical
 

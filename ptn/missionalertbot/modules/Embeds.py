@@ -15,6 +15,7 @@ import discord
 # import local classes
 from ptn.missionalertbot.classes.CarrierData import CarrierData
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
+from ptn.missionalertbot.classes.MissionParams import MissionParams
 
 # import local constants
 import ptn.missionalertbot.constants as constants
@@ -22,6 +23,25 @@ from ptn.missionalertbot.constants import ptn_logo_discord
 
 #import local modules
 from ptn.missionalertbot.database.database import find_mission
+
+
+# confirm edit mission embed
+def _confirm_edit_mission_embed(mission_params: MissionParams):
+    """
+    Used by mission editor to confirm details with user before committing.
+
+    Param mission_params: ClassInstance of MissionParams
+    """
+    confirm_embed = discord.Embed(
+        title=f"{mission_params.mission_type.upper()}ING: {mission_params.carrier_data.carrier_long_name}",
+        description=f"Please confirm updated mission details for {mission_params.carrier_data.carrier_long_name}:\n\n" \
+                    f"{mission_params.discord_text}",
+        color=constants.EMBED_COLOUR_QU
+    )
+    thumb_url = constants.ICON_LOADING if mission_params.mission_type == 'load' else constants.ICON_UNLOADING
+    confirm_embed.set_thumbnail(url=thumb_url)
+
+    return confirm_embed
 
 
 # return an embed featuring either the active mission or the not found message

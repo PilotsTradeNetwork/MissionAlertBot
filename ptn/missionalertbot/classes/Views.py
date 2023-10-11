@@ -783,22 +783,22 @@ class AddCarrierButtons(View):
                 if carrier_data:
                     print(f"Duplicate long_name: {carrier_data}")
                     duplicate = details['long_name']
-                    return duplicate, carrier_data
+                    return duplicate, carrier_data, 'name'
                 carrier_data = find_carrier(details['carrier_id'], CarrierDbFields.cid.name)
                 if carrier_data:
                     print(f"Duplicate carrier_id: {carrier_data}")
                     duplicate = details['carrier_id']
-                    return duplicate, carrier_data
+                    return duplicate, carrier_data, 'ID'
                 carrier_data = find_carrier(details['short_name'], CarrierDbFields.shortname.name)
                 if carrier_data:
                     print(f"Duplicate short_name: {carrier_data}")
                     duplicate = details['short_name']
-                    return duplicate, carrier_data
+                    return duplicate, carrier_data, 'shortname'
                 else:
                     duplicate = None
             except Exception as e:
                 print(e)
-            return duplicate, None
+            return duplicate, None, None
 
 
         for details in self.carrier_details:
@@ -810,15 +810,15 @@ class AddCarrierButtons(View):
             try:
                 # call our duplicates check
                 print("Checking for existing data in DB")
-                duplicate, carrier_data = check_for_duplicates(details)
+                duplicate, carrier_data, offending_parameter = check_for_duplicates(details)
                 if duplicate:
                     # skip the carrier and notify the user
                     print(f'Request recieved from {interaction.user} to add a carrier that already exists in the database ({long_name}).')
 
                     embed = discord.Embed(
-                        title="Fleet carrier already exists, use /carrier_edit to change its details.",
-                        description=f"Carrier data matched for {duplicate}",
-                        color=constants.EMBED_COLOUR_OK
+                        title=f"⚠ FLEET CARRIER ALREADY IN DATABASE",
+                        description=f"A Fleet Carrier already exists with the {offending_parameter} `{duplicate}`. You can use `/carrier_edit` to change its details or try adding the carrier with a different {offending_parameter}",
+                        color=constants.EMBED_COLOUR_WARNING
                     )
                     embed = _add_common_embed_fields(embed, carrier_data, interaction)
 
@@ -828,7 +828,7 @@ class AddCarrierButtons(View):
                     # continue with adding carrier
                     await add_carrier_to_database(short_name.lower(), long_name.upper(), carrier_id.upper(), channel_name.lower(), 0, owner_id)
                     carrier_data = find_carrier(long_name, CarrierDbFields.longname.name)
-                    info_embed = discord.Embed(title="Fleet Carrier successfully added to database",
+                    info_embed = discord.Embed(title="✅ FLEET CARRIER ADDED",
                                         color=constants.EMBED_COLOUR_OK)
                     info_embed = _add_common_embed_fields(info_embed, carrier_data, interaction)
 
@@ -842,7 +842,13 @@ class AddCarrierButtons(View):
 
                     # TODO link with existing add_carrier function to remove duplicate code
 
-                    await interaction.followup.send(embeds=embeds)
+                    confirmation: discord.Message = await interaction.followup.send(embeds=embeds)
+
+                    stock_command_channel = bot.get_channel(bot_command_channel())
+
+                    content = f"<@{interaction.user.id}>: Please use the following command to add **{long_name}** ({carrier_id}) from {confirmation.jump_url} to Stockbot."
+
+                    await stock_command_channel.send(content=content, embed=cp_embed)
 
                     # notify bot-spam
                     print("Notify bot-spam")
@@ -862,7 +868,24 @@ class AddCarrierButtons(View):
                 except Exception as e:
                     await on_generic_error(interaction, e)
         
-        await interaction.delete_original_response()
+        carriers = []
+
+        for details in self.carrier_details:
+            carriers.append(f"- **{details['long_name']}** ({details['carrier_id']}) as `{details['short_name']}`")
+
+        formatted_carriers = "\n".join(carriers)
+
+        plural = 'S' if len(formatted_carriers) > 1 else ''
+            
+        embed = discord.Embed(
+            title=f'✅ PROCESSED FLEET CARRIER{plural}',
+            description=formatted_carriers,
+            color=constants.EMBED_COLOUR_OK
+        )
+
+        embed.set_footer(f"Called by {interaction.user.display_name} for {interaction.message.author.display_name}")
+
+        await interaction.edit_original_response(embed=embed)
 
 
     async def on_timeout(self): 
@@ -870,15 +893,18 @@ class AddCarrierButtons(View):
         self.clear_items()
         print("View timed out")
 
-        # return a message to the user that the interaction has timed out
-        timeout_embed = discord.Embed(
-            description="⏲ Timed out.",
-            color=constants.EMBED_COLOUR_ERROR
-        )
+        message = await self.message.channel.fetch_message(self.message.id)
 
-        try:
-            await self.message.edit(embed=timeout_embed, view=self)
-        except NotFound: # we don't care about 404 as we're deleting the original message
-            pass
-        except Exception as e:
-            print(f'Failed applying timeout: {e}')
+        embed: discord.Embed = message.embeds[0]
+
+        if '🔎' in embed.title:
+            # return a message to the user that the interaction has timed out
+            embed.set_footer(text="⏲ Timed out.")
+
+            try:
+                await self.message.edit(embed=embed, view=self)
+            except Exception as e:
+                print(f'Failed applying timeout: {e}')
+
+        else:
+            await self.message.edit(view=None)

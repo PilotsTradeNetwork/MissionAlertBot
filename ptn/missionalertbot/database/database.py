@@ -20,6 +20,7 @@ from datetime import timezone
 from ptn.missionalertbot.classes.CarrierData import CarrierData
 from ptn.missionalertbot.classes.Commodity import Commodity
 from ptn.missionalertbot.classes.MissionData import MissionData
+from ptn.missionalertbot.classes.MissionParams import MissionParams
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 from ptn.missionalertbot.classes.NomineesData import NomineesData
 from ptn.missionalertbot.classes.WebhookData import WebhookData
@@ -32,6 +33,19 @@ from ptn.missionalertbot.database.Commodities import commodities_all
 # local modules
 from ptn.missionalertbot.modules.DateString import get_formatted_date_string
 from ptn.missionalertbot.modules.ErrorHandler import CustomError, on_generic_error
+
+
+# ensure all paths function for a clean install
+def build_directory_structure_on_startup():
+    print("Building directory structure...")
+    os.makedirs(constants.DB_PATH, exist_ok=True) # /database - the main database files
+    os.makedirs(constants.IMAGE_PATH, exist_ok=True) # /images - carrier images
+    os.makedirs(f"{constants.IMAGE_PATH}/old", exist_ok=True) # /images/old - backed up carrier images
+    os.makedirs(constants.SQL_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
+    os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
+    os.makedirs(constants.CC_IMAGE_PATH, exist_ok=True) # /images/cc - CC thumbnail images
+
+build_directory_structure_on_startup() # build directory structure when bot first starts
 
 
 # connect to sqlite carrier database
@@ -284,17 +298,6 @@ def create_missing_column(table, column, existing, db_name, db_obj, db_conn, cre
     print('Operation complete.')
     db_conn.commit()
     return
-
-
-# ensure all paths function for a clean install
-def build_directory_structure_on_startup():
-    print("Building directory structure...")
-    os.makedirs(constants.DB_PATH, exist_ok=True) # /database - the main database files
-    os.makedirs(constants.IMAGE_PATH, exist_ok=True) # /images - carrier images
-    os.makedirs(f"{constants.IMAGE_PATH}/old", exist_ok=True) # /images/old - backed up carrier images
-    os.makedirs(constants.SQL_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
-    os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
-    os.makedirs(constants.CC_IMAGE_PATH, exist_ok=True) # /images/cc - CC thumbnail images
 
 
 # build the databases, from scratch if needed
@@ -748,7 +751,7 @@ def find_mission(searchterm, searchfield):
     # unpickle the mission_params object if it exists
     if mission_data.mission_params:
         print("Found mission_params, enumerating...")
-        mission_data.mission_params = pickle.loads(mission_data.mission_params)
+        mission_data.mission_params: MissionParams = pickle.loads(mission_data.mission_params)
         mission_data.mission_params.print_values()
     else:
         print("No mission_params found")

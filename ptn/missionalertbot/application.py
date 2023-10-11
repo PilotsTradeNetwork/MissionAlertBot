@@ -8,9 +8,7 @@ import asyncio
 import os
 
 # import build functions
-from ptn.missionalertbot.database.database import build_database_on_startup, build_directory_structure_on_startup, populate_commodities_table_on_startup
-
-build_directory_structure_on_startup() # build directory structure
+from ptn.missionalertbot.database.database import build_database_on_startup, populate_commodities_table_on_startup
 
 # import bot Cogs
 from ptn.missionalertbot.botcommands.GeneralCommands import GeneralCommands

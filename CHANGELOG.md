@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.3
+- [#620](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/620) `Add Carrier`'s initial response is now edited rather than deleted, to enhance clarity for observers.
+- [#619](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/619) `Add Carrier` now sends the stockbot command to #bot-commands, with a ping for the command user.
+- `Add Carrier` is now plural-aware.
+- [#621](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/621) Mission summary for `/cco load`, `/cco unload`, and `/cco edit` now uses the alert text instead of embed with fields.
+- Renamed `✍ Set Message` on `/cco edit` to `✍ Set or Remove Message`+
+- Removed the `🗑 Remove Message` button from `/cco edit` and conformed `✍ Set or Remove Message` behaviour to match `✍ Set Message` on `/cco load` and `/cco unload`. 
+- [#618](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/618) Bugfix: `build_directory_structure_on_startup()` now runs in `database.py` instead of `application.py`.
+- Bugfix: channel delete on mission gen failure will now be properly called with `seconds_short()`
+
+
 ## 2.3.2
 - Hotfix for missions not sending if user has no webhooks saved
 - Mission preview now uses trade alert preview

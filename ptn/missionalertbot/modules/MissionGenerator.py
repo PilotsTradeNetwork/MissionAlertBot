@@ -1261,7 +1261,7 @@ async def gen_mission(interaction: discord.Interaction, mission_params: MissionP
                 if not submit_mission: # error condition, cleanup after ourselves
                     cleanup_temp_image_file(mission_params.discord_img_name)
                     if mission_params.mission_temp_channel_id:
-                        await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short)
+                        await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short())
 
             if "r" in mission_params.sendflags and not mission_params.edmc_off: # send to subreddit
                 async with interaction.channel.typing():
@@ -1356,7 +1356,7 @@ async def gen_mission(interaction: discord.Interaction, mission_params: MissionP
         except Exception as e:
             print(e)
         if mission_params.mission_temp_channel_id:
-            await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short)
+            await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short())
 
 
 async def create_mission_temp_channel(interaction, mission_params):
@@ -1571,13 +1571,11 @@ async def mission_generation_complete(interaction: discord.Interaction, mission_
     embed = discord.Embed(
         title=f"{mission_data.mission_type.upper()}ING {mission_data.carrier_name} ({mission_data.carrier_identifier})",
         description="Mission successfully entered into the missions database. You can use `/missions` to view a list of active missions" \
-                   f" or `/mission information` in <#{mission_data.channel_id}> to view its mission information from the database.",
+                   f" or `/mission information` in <#{mission_data.channel_id}> to view its mission information from the database.\n\n" \
+                   f"{mission_data.mission_params.discord_text}",
         color=embed_colour
     )
     embed.set_thumbnail(url=thumbnail_url)
-
-    # update the embed with mission data fields
-    embed = _mission_summary_embed(mission_data.mission_params, embed)
 
     embed.set_footer(text="You can use /cco complete <carrier> to mark the mission complete.")
 
