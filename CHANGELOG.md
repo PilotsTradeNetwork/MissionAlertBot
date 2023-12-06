@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.4
+- [#629](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/629) Shortnames created via `Add Carrier` will no longer include non-alphanumeric characters
+- [#628](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/628) `Add Carrier`'s confirmation buttons now include a check for which user is attempting the interaction
+- [#626](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/626) `Add Carrier`'s "Please wait..." message will now be updated upon completion.
+
+
 ## 2.3.3
 - [#620](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/620) `Add Carrier`'s initial response is now edited rather than deleted, to enhance clarity for observers.
 - [#619](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/619) `Add Carrier` now sends the stockbot command to #bot-commands, with a ping for the command user.

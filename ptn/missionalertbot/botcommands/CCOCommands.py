@@ -17,7 +17,7 @@ from discord.ext.commands import GroupCog
 # import local constants
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, mission_command_channel, certcarrier_role, trainee_role, seconds_long, rescarrier_role, commodities_common, \
-    bot_spam_channel, training_mission_command_channel, seconds_very_short, admin_role, mod_role, cco_mentor_role, aco_role, recruit_role
+    bot_spam_channel, training_mission_command_channel, seconds_very_short, admin_role, mod_role, cco_mentor_role, aco_role, recruit_role, cco_color_role
 
 # import local classes
 from ptn.missionalertbot.classes.MissionParams import MissionParams
@@ -111,6 +111,7 @@ async def toggle_cco(interaction:  discord.Interaction, member: discord.Member):
 
     member_roles = member.roles
     cco_role = discord.utils.get(interaction.guild.roles, id=certcarrier_role())
+    color_cco_role = discord.utils.get(interaction.guild.roles, id=cco_color_role())
     reserve_role = discord.utils.get(interaction.guild.roles, id=rescarrier_role())
     aco_role_object = discord.utils.get(interaction.guild.roles, id=aco_role())
     trainee_role_object = discord.utils.get(interaction.guild.roles, id=trainee_role())
@@ -121,7 +122,7 @@ async def toggle_cco(interaction:  discord.Interaction, member: discord.Member):
         print("Member does not already have role, checking user is sure about granting...")
 
         try:
-            roles = [cco_role, reserve_role]
+            roles = [cco_role, reserve_role, color_cco_role]
             remove_roles = [aco_role_object, trainee_role_object, recruit_role_object]
             view = ConfirmGrantRoleView(member, roles, remove_roles)
 
@@ -523,6 +524,7 @@ class CCOCommands(commands.Cog):
             # check if they have the CCO role
             print("⏳ Checking for CCO role...")
             cco_role = discord.utils.get(interaction.guild.roles, id=certcarrier_role())
+            color_cco_role = discord.utils.get(interaction.guild.roles, id=cco_color_role())
             if cco_role in interaction.user.roles:
                 print("▶ CCO role found. Transitioning user to inactive status.")
                 # check they have the Fleet Reserve role
@@ -534,6 +536,11 @@ class CCOCommands(commands.Cog):
                 # remove the CCO role
                 print("▶ Removing CCO role")
                 await interaction.user.remove_roles(cco_role)
+
+                # check for color role
+                if color_cco_role in interaction.user.roles:
+                    print("▶ Removing color role")
+                    await interaction.user.remove_roles(color_cco_role)
                 embed.description = f'💤 **Removed your <@&{cco_role.id}>** role. You are now marked inactive in the <@&{reserve_role.id}>.'
                 embed.set_footer(text='You can return to active status at any time by using this command again.')
                 embed.color = constants.EMBED_COLOUR_OK
@@ -541,6 +548,7 @@ class CCOCommands(commands.Cog):
             else:
                 print("▶ No CCO role found. Transitioning user to active status.")
                 await interaction.user.add_roles(cco_role)
+                await interaction.user.add_roles(color_cco_role)
                 print("✅ Granted CCO role.")
 
                 # check if user has an opt-in entry yet

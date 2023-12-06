@@ -14,7 +14,7 @@ from ptn.missionalertbot.classes.MissionData import MissionData
 
 # import local constants
 import ptn.missionalertbot.constants as constants
-from ptn.missionalertbot.constants import get_reddit, reddit_channel, sub_reddit, bot_guild, certcarrier_role, rescarrier_role, bot_spam_channel
+from ptn.missionalertbot.constants import get_reddit, reddit_channel, sub_reddit, bot_guild, certcarrier_role, rescarrier_role, bot_spam_channel, cco_color_role
 
 # import local modules
 from ptn.missionalertbot.database.database import CarrierDbFields, carrier_db, mission_db, find_carrier, bot
@@ -90,6 +90,7 @@ async def lasttrade_cron():
         # get roles
         guild = bot.get_guild(bot_guild())
         cc_role = discord.utils.get(guild.roles, id=certcarrier_role())
+        cc_color_role = discord.utils.get(guild.roles, id=cco_color_role())
         fr_role = discord.utils.get(guild.roles, id=rescarrier_role())
         # get spam channel
         spamchannel = bot.get_channel(bot_spam_channel())
@@ -119,6 +120,9 @@ async def lasttrade_cron():
                     owner_dm = await bot.fetch_user(carrier_data.ownerid)
                     await owner_dm.send(f"Ahoy CMDR! Your last PTN Fleet Carrier trade was more than 28 days ago at {last_traded} so you have been automatically marked as inactive and placed in the PTN Fleet Reserve. You can visit <#939919613209223270> or use `/cco active` to **mark yourself as active and return to trading**. o7 CMDR!")
                     print(f"Notified {owner.name} by DM.")
+                if cc_color_role in owner.roles:
+                    print(f"{owner.name} has the CCO Color role, removing.")
+                    await owner.remove_roles(cc_color_role)
                 if fr_role not in owner.roles:
                     print(f"{owner.name} does not have the Fleet Reserve role, adding.")
                     await owner.add_roles(fr_role)

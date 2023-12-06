@@ -196,6 +196,17 @@ def _regex_alphanumeric_with_hyphens(regex_string):
     print(f"Processed {regex_string} into {processed_string}")
     return processed_string
 
+def _regex_alphanumeric_only(regex_string):
+    # remove spaces and make lowercase
+    regex_string_no_spaces = regex_string.lower().replace(' ', '')
+    # take only the alphanumeric characters and hyphens, leave behind everything else
+    re_compile = re.compile('([\w-]+)')
+    compiled_name = re_compile.findall(regex_string_no_spaces)
+    # join together all the extracted bits into one string
+    processed_string = ''.join(compiled_name)
+    print(f"Processed {regex_string} into {processed_string}")
+    return processed_string
+
 
 """
 Community Team command helpers
@@ -708,7 +719,7 @@ def extract_carrier_ident_strings(message: discord.Message):
             print(f'Found matching pair in message: {ptn_string} ({bracket_string})')
             # extract a shortname
             shortname_string = re.sub(shortname_pattern, '', ptn_string)
-            shortname_string = shortname_string.lower().replace(" ", "")
+            shortname_string = _regex_alphanumeric_only(shortname_string)
 
             # create a channel name
             stripped_name = _regex_alphanumeric_with_hyphens(ptn_string).lower()

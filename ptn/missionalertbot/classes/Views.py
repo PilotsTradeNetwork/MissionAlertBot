@@ -9,6 +9,7 @@ Depends on: constants, database, Embeds, ErrorHandler, helpers, MissionCleaner
 import asyncio
 import os
 from datetime import datetime
+import traceback
 
 # import discord.py
 import discord
@@ -752,9 +753,10 @@ class SendNoticeModal(Modal):
 
 # Buttons for Add Carrier interaction
 class AddCarrierButtons(View):
-    def __init__(self, message, carrier_details):
+    def __init__(self, message, carrier_details, author):
         self.message: discord.Message = message
         self.carrier_details: dict = carrier_details
+        self.author = author
         super().__init__(timeout=60)
 
     @discord.ui.button(label='✗ Cancel', style=discord.ButtonStyle.secondary, custom_id='add_carrier_cancel')
@@ -867,25 +869,44 @@ class AddCarrierButtons(View):
                     raise CustomError(error)
                 except Exception as e:
                     await on_generic_error(interaction, e)
-        
-        carriers = []
 
-        for details in self.carrier_details:
-            carriers.append(f"- **{details['long_name']}** ({details['carrier_id']}) as `{details['short_name']}`")
+        try:
+            carriers = []
 
-        formatted_carriers = "\n".join(carriers)
+            for details in self.carrier_details:
+                carriers.append(f"- **{details['long_name']}** ({details['carrier_id']}) as `{details['short_name']}`")
 
-        plural = 'S' if len(formatted_carriers) > 1 else ''
-            
-        embed = discord.Embed(
-            title=f'✅ PROCESSED FLEET CARRIER{plural}',
-            description=formatted_carriers,
-            color=constants.EMBED_COLOUR_OK
-        )
+            formatted_carriers = "\n".join(carriers)
 
-        embed.set_footer(f"Called by {interaction.user.display_name} for {interaction.message.author.display_name}")
+            plural = 'S' if len(formatted_carriers) > 1 else ''
 
-        await interaction.edit_original_response(embed=embed)
+
+            embed = discord.Embed(
+                title=f'✅ PROCESSED FLEET CARRIER{plural}',
+                description=formatted_carriers,
+                color=constants.EMBED_COLOUR_OK
+            )
+
+            embed.set_footer(text=f"Called by {interaction.user.display_name} for {interaction.message.author.display_name}")
+
+            await interaction.edit_original_response(embed=embed)
+
+        except Exception as e:
+            traceback.print_exc()
+
+
+    async def interaction_check(self, interaction: discord.Interaction): # only allow original command user to interact with buttons
+        if interaction.user.id == self.author.id:
+            return True
+        else:
+            embed = discord.Embed(
+                description="Only the command author may use these interactions.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            embed.set_image(url='https://media1.tenor.com/images/939e397bf929b9768b24a8fa165301fe/tenor.gif?itemid=26077542')
+            embed.set_footer(text="Seriously, are you 4? 🙄")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
 
 
     async def on_timeout(self): 

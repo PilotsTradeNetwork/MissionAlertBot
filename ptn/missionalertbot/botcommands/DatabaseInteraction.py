@@ -78,7 +78,7 @@ async def add_carrier(interaction:  discord.Interaction, message: discord.Messag
     embed.title="🔎 CARRIER DETAILS FOUND IN MESSAGE"
     embed.description=None
 
-    view = AddCarrierButtons(message, carrier_details)
+    view = AddCarrierButtons(message, carrier_details, interaction.user)
 
     await interaction.edit_original_response(embed=embed, view=view)
     view.message = await interaction.original_response()
