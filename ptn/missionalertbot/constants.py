@@ -322,7 +322,7 @@ DISCORD_INVITE_URL = 'https://discord.gg/ptn'
 
 # link to our Discord by way of Josh's original post on Reddit
 REDDIT_DISCORD_LINK_URL = \
-    'https://www.reddit.com/r/PilotsTradeNetwork/comments/l0y7dk/pilots_trade_network_intergalactic_discord_server/'
+    'https://discord.gg/ptn'
 
 
 # define constants based on prod or test environment

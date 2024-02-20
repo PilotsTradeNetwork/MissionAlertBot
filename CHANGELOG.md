@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.3.6
+- [#639](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/639) Automatically replace the letter "O" with zero when encountered in Fleet Carrier registrations to add to database
+- [#637](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/637) Discord invites sent by MAB to Reddit now use the direct link: `https://discord.gg/ptn`
+- [#635](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/635) `/cco load`, `unload`, and `edit` now properly use the target carrier's owner for all relevant purposes (including webhooks and trade alert 'author') instead of the interaction user
+- [#642](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/642) `spamchannel` now properly defined for failure state when member cannot be found during mission generation
+- [#642](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/642) `mission_temp_channel` now properly defined as `None` before `send_mission_to_discord()`, to avoid additional errors when said function returns early due to error
+- [#642](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/642) `find_mission` now properly returns `mission_data` as `None` if no mission is found, rather than a class filled entirely with `None`
+- [#642](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/642) Channel lock release should now work properly if the mission generator stops because of an error
+- [#643](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/643) `/admin_release_channel_lock` and `/admin_acquire_channel_lock` now properly notify the user if the lock status is already as desired
+
+
+## 2.3.5
+- [#632](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/632) Removed footer of `Add Carrier` summary embed (no longer needed)
+
+
 ## 2.3.4
 - [#629](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/629) Shortnames created via `Add Carrier` will no longer include non-alphanumeric characters
 - [#628](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/628) `Add Carrier`'s confirmation buttons now include a check for which user is attempting the interaction

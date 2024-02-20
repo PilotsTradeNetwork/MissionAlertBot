@@ -66,7 +66,8 @@ Mission generator views
 
 # buttons for mission generation
 class MissionSendView(View):
-    def __init__(self, mission_params, author: typing.Union[discord.Member, discord.User], timeout=300):
+    def __init__(self, mission_params, owner, author: typing.Union[discord.Member, discord.User], timeout=300):
+        self.owner = owner
         self.author = author
         self.mission_params: MissionParams = mission_params
         super().__init__(timeout=timeout)
@@ -118,7 +119,7 @@ class MissionSendView(View):
             # if 'b' in self.mission_params.sendflags: self.mission_params.sendflags.remove('b') # don't allow pinging both haulers and BubbleWineLoaders
 
         # update our button view - the button colors will automatically change
-        view = MissionSendView(self.mission_params, self.author)
+        view = MissionSendView(self.mission_params, self.owner, self.author)
         await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=view)
 
     """@discord.ui.button(label="Notify Wine Loaders", style=discord.ButtonStyle.secondary, emoji="🍷", custom_id="notify_wine_loaders", row=0)
@@ -132,7 +133,7 @@ class MissionSendView(View):
             if 'n' in self.mission_params.sendflags: self.mission_params.sendflags.remove('n') # don't allow pinging both haulers and BubbleWineLoaders
 
         # update our button view - the button colors will automatically change
-        view = MissionSendView(self.mission_params, self.author)
+        view = MissionSendView(self.mission_params, self.owner, self.author)
         await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=view)"""
 
     @discord.ui.button(label="Reddit", style=discord.ButtonStyle.secondary, emoji=f"<:upvote:{upvote_emoji()}>", custom_id="send_reddit", row=0)
@@ -145,7 +146,7 @@ class MissionSendView(View):
             self.mission_params.sendflags.append('r')
 
         # update our button view - the button colors will automatically change
-        view = MissionSendView(self.mission_params, self.author)
+        view = MissionSendView(self.mission_params, self.owner, self.author)
         await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=view)
 
     @discord.ui.button(label="Webhooks", style=discord.ButtonStyle.secondary, emoji="🌐", custom_id="send_webhooks", row=0)
@@ -158,7 +159,7 @@ class MissionSendView(View):
             self.mission_params.sendflags.append('w')
 
         # update our button view - the button colors will automatically change
-        view = MissionSendView(self.mission_params, self.author)
+        view = MissionSendView(self.mission_params, self.owner, self.author)
         await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=view)
 
     @discord.ui.button(label="Copy/Paste Text", style=discord.ButtonStyle.secondary, emoji="📃", custom_id="text_only", row=0)
@@ -171,7 +172,7 @@ class MissionSendView(View):
             self.mission_params.sendflags.append('t')
 
         # update our button view - the button colors will automatically change
-        view = MissionSendView(self.mission_params, self.author)
+        view = MissionSendView(self.mission_params, self.owner, self.author)
         await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=view)
 
     # row 1
@@ -187,7 +188,7 @@ class MissionSendView(View):
             print(e)
 
         print("Calling mission generator from Send Mission button")
-        await gen_mission(interaction, self.mission_params)
+        await gen_mission(interaction, self.owner, self.mission_params)
 
     @discord.ui.button(label="EDMC-OFF", style=discord.ButtonStyle.primary, emoji="🤫", custom_id="edmcoff", row=1)
     async def edmc_off_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -201,14 +202,14 @@ class MissionSendView(View):
             self.mission_params.sendflags = ['d', 'e', 'n']
 
         # update our button view - the button colors will automatically change
-        view = MissionSendView(self.mission_params, self.author)
+        view = MissionSendView(self.mission_params, self.owner, self.author)
         await interaction.response.edit_message(embeds=self.mission_params.original_message_embeds, view=view)
 
     @discord.ui.button(label="Set Message", style=discord.ButtonStyle.secondary, emoji="✍", custom_id="message", row=1)
     async def message_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         print(f"{interaction.user.display_name} wants to add a message to their mission")
     
-        await interaction.response.send_modal(AddMessageModal(self.mission_params, self.author))
+        await interaction.response.send_modal(AddMessageModal(self.mission_params, self.owner, self.author))
 
     async def interaction_check(self, interaction: discord.Interaction): # only allow original command user to interact with buttons
         if interaction.user.id == self.author.id:
@@ -263,9 +264,10 @@ class MissionSendView(View):
 
 # modal for message button
 class AddMessageModal(Modal):
-    def __init__(self, mission_params, author, title = 'Add message to mission', timeout = None) -> None:
+    def __init__(self, mission_params, owner, author, title = 'Add message to mission', timeout = None) -> None:
         self.mission_params: MissionParams = mission_params
         self.author = author
+        self.owner = owner
         self.message.default = self.mission_params.cco_message_text if self.mission_params.cco_message_text else None
         super().__init__(title=title, timeout=timeout)
 
@@ -314,7 +316,7 @@ class AddMessageModal(Modal):
             if self.mission_params.booze_cruise:
                 print("Updating BC alert preview with message")
                 self.mission_params.discord_text = txt_create_discord(interaction, self.mission_params, preview=True)
-                preview_embed: discord.Embed = await return_discord_alert_embed(interaction, self.mission_params)
+                preview_embed: discord.Embed = await return_discord_alert_embed(self.owner, self.mission_params)
                 preview_embed.title = '🔎 CONFIRM MISSION DETAILS AND SELECT SENDS'
                 preview_embed.remove_author()
                 if embeds and hasattr(embeds[2], 'title') and 'confirm' in embeds[2].title.lower():
@@ -326,7 +328,7 @@ class AddMessageModal(Modal):
             # update our master embeds list
             self.mission_params.original_message_embeds = embeds
 
-            view = MissionSendView(self.mission_params, self.author)
+            view = MissionSendView(self.mission_params, self.owner, self.author)
 
 
             await interaction.response.edit_message(embeds=embeds, view=view)
@@ -417,14 +419,15 @@ async def define_commodity(interaction: discord.Interaction, mission_params):
                 await on_generic_error(interaction, e)
 
 
-async def return_discord_alert_embed(interaction: discord.Interaction, mission_params: MissionParams):
+async def return_discord_alert_embed(owner: discord.Member, mission_params: MissionParams):
     if mission_params.mission_type == 'load':
         embed = discord.Embed(description=mission_params.discord_text, color=constants.EMBED_COLOUR_LOADING)
         embed.set_thumbnail(url=constants.ICON_LOADING)
     else:
         embed = discord.Embed(description=mission_params.discord_text, color=constants.EMBED_COLOUR_UNLOADING)
         embed.set_thumbnail(url=constants.ICON_UNLOADING)
-    embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar)
+    # TODO this should be from ownerid, not interaction.user
+    embed.set_author(name=owner.display_name, icon_url=owner.display_avatar)
     return embed
 
 
@@ -556,19 +559,19 @@ async def return_discord_channel_embeds(mission_params: MissionParams):
     return discord_embeds
 
 
-async def send_mission_to_discord(interaction: discord.Interaction, mission_params: MissionParams):
+async def send_mission_to_discord(interaction: discord.Interaction, owner: discord.Member, mission_params: MissionParams):
     print("User used option d, creating mission channel")
 
     # beyond this point we need to release channel lock if mission creation fails
 
-    mission_params.mission_temp_channel_id = await create_mission_temp_channel(interaction, mission_params)
+    mission_params.mission_temp_channel_id = await create_mission_temp_channel(interaction, owner, mission_params)
     mission_temp_channel = bot.get_channel(mission_params.mission_temp_channel_id)
 
     message_send = await interaction.channel.send("**Sending to Discord...**")
     try:
         # TRADE ALERT
         # send trade alert to trade alerts channel, or to wine alerts channel if loading wine for the BC
-        submit_mission = await send_discord_alert(interaction, mission_params)
+        submit_mission = await send_discord_alert(interaction, owner, mission_params)
         if not submit_mission: return
 
         # CHANNEL MESSAGE
@@ -595,7 +598,7 @@ async def send_mission_to_discord(interaction: discord.Interaction, mission_para
         return
 
 
-async def send_discord_alert(interaction: discord.Interaction, mission_params: MissionParams):
+async def send_discord_alert(interaction: discord.Interaction, owner: discord.Member, mission_params: MissionParams):
     # generate alert text
     mission_params.discord_text = txt_create_discord(interaction, mission_params)
 
@@ -617,7 +620,7 @@ async def send_discord_alert(interaction: discord.Interaction, mission_params: M
             or
             (not hasattr(mission_params, 'booze_cruise') and mission_params.commodity_name.title() != 'Wine') # pre-2.3.0 compatibility
         ): # condition for if subject is not a BC wine load
-            embed = await return_discord_alert_embed(interaction, mission_params)
+            embed = await return_discord_alert_embed(owner, mission_params)
             trade_alert_msg = await alerts_channel.send(embed=embed)
         else: # BC channels don't use embeds
             trade_alert_msg = await alerts_channel.send(mission_params.discord_text, suppress_embeds=True)
@@ -831,7 +834,7 @@ async def send_mission_to_subreddit(interaction, mission_params):
         await message_send.delete()
 
 
-async def send_mission_to_webhook(interaction, mission_params):
+async def send_mission_to_webhook(interaction: discord.Interaction, mission_params: MissionParams):
     print("Processing option w")
 
     print("Checking if user has any webhooks...")
@@ -1023,6 +1026,16 @@ async def confirm_send_mission_via_button(interaction: discord.Interaction, miss
     
     await prepare_for_gen_mission(interaction, mission_params)
 
+    # find carrier owner as a user object
+    guild = await get_guild()
+    try:
+        owner = await guild.fetch_member(mission_params.carrier_data.ownerid)
+        print(f"Owner identified as {owner.display_name}")
+    except:
+        print("Error resolving Discord member from owner")
+        raise EnvironmentError(f'Could not find Discord user matching ID {mission_params.carrier_data.ownerid}')
+
+
     if mission_params.returnflag == False:
         print("Problems found, mission gen will not proceed.")
         return
@@ -1043,7 +1056,7 @@ async def confirm_send_mission_via_button(interaction: discord.Interaction, miss
             # confirm_embed = _mission_summary_embed(mission_params, confirm_embed)
             # 2.3.2: replaced confirm_embed with preview embed. TODO: keep or revert
             mission_params.discord_text = txt_create_discord(interaction, mission_params, preview=True)
-            preview_embed: discord.Embed = await return_discord_alert_embed(interaction, mission_params)
+            preview_embed: discord.Embed = await return_discord_alert_embed(owner, mission_params)
             preview_embed.title = '🔎 CONFIRM MISSION DETAILS AND SELECT SENDS'
             preview_embed.remove_author()
 
@@ -1087,7 +1100,7 @@ async def confirm_send_mission_via_button(interaction: discord.Interaction, miss
             mission_params.original_message_embeds.append(preview_embed)
             # mission_params.original_message_embeds.append(confirm_embed)
 
-            view = MissionSendView(mission_params, interaction.user) # buttons to add
+            view = MissionSendView(mission_params, owner, interaction.user) # buttons to add
 
             await interaction.edit_original_response(embeds=mission_params.original_message_embeds, view=view)
 
@@ -1203,7 +1216,7 @@ async def prepare_for_gen_mission(interaction: discord.Interaction, mission_para
             # this only returns true if commodity is wine AND the BC channels are open, otherwise it is false
 
     # add any webhooks to mission_params
-    webhook_data = find_webhook_from_owner(interaction.user.id)
+    webhook_data = find_webhook_from_owner(carrier_data.ownerid)
     if webhook_data:
         for webhook in webhook_data:
             mission_params.webhook_urls.append(webhook.webhook_url)
@@ -1215,7 +1228,7 @@ async def prepare_for_gen_mission(interaction: discord.Interaction, mission_para
 
 
 # mission generator called by loading/unloading commands
-async def gen_mission(interaction: discord.Interaction, mission_params: MissionParams):
+async def gen_mission(interaction: discord.Interaction, owner: discord.Member, mission_params: MissionParams):
     # generate a timestamp for mission creation
     mission_params.timestamp = get_formatted_date_string()[2]
 
@@ -1224,6 +1237,8 @@ async def gen_mission(interaction: discord.Interaction, mission_params: MissionP
     mission_params.print_values()
 
     submit_mission = False
+
+    mission_temp_channel = None
 
     print(f'Mission generation type: {mission_params.mission_type} requested by {interaction.user}. Request triggered from '
         f'channel {current_channel}.')
@@ -1257,7 +1272,7 @@ async def gen_mission(interaction: discord.Interaction, mission_params: MissionP
 
         if "d" in mission_params.sendflags: # send to discord and save to mission database
             async with interaction.channel.typing():
-                submit_mission, mission_temp_channel = await send_mission_to_discord(interaction, mission_params)
+                submit_mission, mission_temp_channel = await send_mission_to_discord(interaction, owner, mission_params)
                 if not submit_mission: # error condition, cleanup after ourselves
                     cleanup_temp_image_file(mission_params.discord_img_name)
                     if mission_params.mission_temp_channel_id:
@@ -1346,10 +1361,10 @@ async def gen_mission(interaction: discord.Interaction, mission_params: MissionP
             print("Releasing channel lock...")
             locked = check_mission_channel_lock(mission_params.carrier_data.discord_channel)
             if locked:
-                await unlock_mission_channel(mission_temp_channel.name)
+                await unlock_mission_channel(mission_params.carrier_data.discord_channel)
                 print("Channel lock released")
                 embed = discord.Embed(
-                    description=f"🔓 Released lock for `{mission_temp_channel.name}` (<#{mission_temp_channel.id}>) because of error in mission generation.",
+                    description=f"🔓 Released lock for `{mission_params.carrier_data.discord_channel}` (<#{mission_params.mission_temp_channel.id}>) because of error in mission generation.",
                     color=constants.EMBED_COLOUR_OK
                 )
                 await spamchannel.send(embed=embed)
@@ -1359,7 +1374,7 @@ async def gen_mission(interaction: discord.Interaction, mission_params: MissionP
             await remove_carrier_channel(interaction, mission_params.mission_temp_channel_id, seconds_short())
 
 
-async def create_mission_temp_channel(interaction, mission_params):
+async def create_mission_temp_channel(interaction, owner: discord.Member, mission_params):
     # create the carrier's channel for the mission
 
     # first check whether channel already exists
@@ -1371,13 +1386,13 @@ async def create_mission_temp_channel(interaction, mission_params):
         color=constants.EMBED_COLOUR_QU
     )
     lockwait_msg = await interaction.channel.send(embed=embed)
+    spamchannel = bot.get_channel(bot_spam_channel())
     try:
         await asyncio.wait_for(lock_mission_channel(mission_params.carrier_data.discord_channel), timeout=20)
         embed = discord.Embed(
             description=f"🔒 Lock acquired for `{mission_params.carrier_data.discord_channel}` for mission creation.",
             color=constants.EMBED_COLOUR_QU
         )
-        spamchannel = bot.get_channel(bot_spam_channel())
         await spamchannel.send(embed=embed)
     except asyncio.TimeoutError as e:
         embed = discord.Embed(
@@ -1435,14 +1450,6 @@ async def create_mission_temp_channel(interaction, mission_params):
     # we made it this far, we can change the returnflag
     gen_mission.returnflag = True
 
-    # find carrier owner as a user object
-    guild = await get_guild()
-    try:
-        member = await guild.fetch_member(mission_params.carrier_data.ownerid)
-        print(f"Owner identified as {member.display_name}")
-    except:
-        raise EnvironmentError(f'Could not find Discord user matching ID {mission_params.carrier_data.ownerid}')
-
     overwrite = await get_overwrite_perms()
 
     try:
@@ -1450,8 +1457,8 @@ async def create_mission_temp_channel(interaction, mission_params):
         await mission_temp_channel.edit(sync_permissions=True)
         print("Synced permissions with parent category")
         # now add the owner with superpermissions
-        await mission_temp_channel.set_permissions(member, overwrite=overwrite)
-        print(f"Set permissions for {member} in {mission_temp_channel}")
+        await mission_temp_channel.set_permissions(owner, overwrite=overwrite)
+        print(f"Set permissions for {owner} in {mission_temp_channel}")
     except Forbidden:
         raise EnvironmentError(f"Could not set channel permissions in {mission_temp_channel}, reason: Bot does not have permissions to edit channel specific permissions.")
     except NotFound:

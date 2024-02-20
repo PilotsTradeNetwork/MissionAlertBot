@@ -17,7 +17,7 @@ from discord.ui import View, Modal
 
 # import local constants
 import ptn.missionalertbot.constants as constants
-from ptn.missionalertbot.constants import bot, bot_spam_channel, get_reddit, upvote_emoji, wineloader_role, hauler_role
+from ptn.missionalertbot.constants import bot, bot_spam_channel, get_reddit, upvote_emoji, wineloader_role, hauler_role, get_guild
 
 # import local classes
 from ptn.missionalertbot.classes.MissionParams import MissionParams
@@ -272,14 +272,23 @@ async def edit_discord_alerts(interaction: discord.Interaction, mission_params: 
                 discord_alert_msg = None
 
             # get new trade alert message
+            # resolve owner
+            guild = await get_guild()
+            try:
+                owner = await guild.fetch_member(mission_params.carrier_data.ownerid)
+                print(f"Owner identified as {owner.display_name}")
+            except:
+                print("Error resolving Discord member from owner")
+                raise EnvironmentError(f'Could not find Discord user matching ID {mission_params.carrier_data.ownerid}')
+
             print("Create new alert text and embed")
             mission_params.discord_text = txt_create_discord(interaction, mission_params)
             if hasattr(mission_params, "booze_cruise") and not mission_params.booze_cruise: # pre-2.3.0 backwards compatibility
                 # TRUE if the BC flag is present, but not set (i.e. no BC state active)
-                embed = await return_discord_alert_embed(interaction, mission_params)
+                embed = await return_discord_alert_embed(owner, mission_params)
             else:
                 # these few lines of code are super dumb but basically just skip the embed generation if it's not needed :|
-                embed = await return_discord_alert_embed(interaction, mission_params)
+                embed = await return_discord_alert_embed(owner, mission_params)
 
             # edit in new trade alert message
             if discord_alert_msg:
@@ -296,7 +305,8 @@ async def edit_discord_alerts(interaction: discord.Interaction, mission_params: 
             else:
                 try:
                     print("Send new alert")
-                    submit_mission = await send_discord_alert(interaction, mission_params)
+
+                    submit_mission = await send_discord_alert(interaction, owner, mission_params)
 
                     embed = discord.Embed(
                         description=f"Original alert not found. Replacement sent to <#{mission_params.channel_alerts_actual}>",

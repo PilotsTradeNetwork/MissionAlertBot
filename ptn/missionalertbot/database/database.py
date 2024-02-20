@@ -745,8 +745,16 @@ def find_mission(searchterm, searchfield):
     """
     mission_db.execute(f'''SELECT * FROM missions WHERE {searchfield} LIKE (?)''',
                         (f'%{searchterm}%',))
-    mission_data = MissionData(mission_db.fetchone())
-    print(f'Found mission data: {mission_data}')
+    row = mission_db.fetchone()
+
+    # check whether a mission exists
+    if row is None:
+        print(f'No mission found for {searchterm} in {searchfield}')
+        mission_data = None
+        return mission_data
+    else:
+        mission_data = MissionData(row)
+        print(f'Found mission data: {mission_data}')
 
     # unpickle the mission_params object if it exists
     if mission_data.mission_params:
@@ -755,7 +763,6 @@ def find_mission(searchterm, searchfield):
         mission_data.mission_params.print_values()
     else:
         print("No mission_params found")
-        return mission_data
 
     return mission_data
 

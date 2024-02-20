@@ -212,6 +212,7 @@ class GeneralCommands(commands.Cog):
                 description=f"No lock found for `{channelname}`.",
                 color=constants.EMBED_COLOUR_ERROR
             )
+            await interaction.response.send_message(embed=embed)
 
         else:
             try:
@@ -248,6 +249,7 @@ class GeneralCommands(commands.Cog):
                 description=f"🔒 `{channelname}` lock is already acquired. Check <#{bot_spam_channel()}> for details.",
                 color=constants.EMBED_COLOUR_ERROR
             )
+            await interaction.response.send_message(embed=embed)
 
         else:
             try:
