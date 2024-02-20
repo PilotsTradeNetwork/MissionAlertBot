@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.7a
+- Reverted `/carrier find` change because Discord is stupid
+
+
 ## 2.3.7
 - All database commands beginning with `carrier_` are now in the `carrier` subgroup, and can be accessed via `/carrier <command>`. This includes `add`, `delete`, `edit`, `purge`, and `find`.
 - `/find` is now `/carrier find`

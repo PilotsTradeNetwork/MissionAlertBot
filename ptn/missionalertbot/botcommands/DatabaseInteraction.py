@@ -697,9 +697,9 @@ class DatabaseInteraction(commands.Cog):
     # slash version of m.find, private
     # TODO: replace with broadcast option
     # TODO: implement multiple result logic from m.find
-    @carrier_group.command(name="find",
+    @app_commands.command(name="find",
                           description="Private command: Search for a fleet carrier by partial match for its name.")
-    @describe(carrier_name_search_term='Part of the full name of the carrier you wish to find.')
+    @app_commands.describe(carrier_name_search_term='Part of the full name of the carrier you wish to find.')
     async def _find(self, interaction: discord.Interaction, carrier_name_search_term: str):
         print(f"{interaction.user} used /find for '{carrier_name_search_term}' in {interaction.channel}")
 
