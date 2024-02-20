@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.7
+- All database commands beginning with `carrier_` are now in the `carrier` subgroup, and can be accessed via `/carrier <command>`. This includes `add`, `delete`, `edit`, `purge`, and `find`.
+- `/find` is now `/carrier find`
+- [#571](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/571) New command: `/carrier purge`: lists carriers belonging to owners who are no longer on the server, with option to delete.
+
+
 ## 2.3.6
 - [#639](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/639) Automatically replace the letter "O" with zero when encountered in Fleet Carrier registrations to add to database
 - [#637](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/637) Discord invites sent by MAB to Reddit now use the direct link: `https://discord.gg/ptn`

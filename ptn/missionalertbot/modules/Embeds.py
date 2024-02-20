@@ -321,3 +321,16 @@ def dm_forbidden_embed(user: discord.Member):
         color=constants.EMBED_COLOUR_QU
     )
     return embed
+
+
+# Orphaned carriers summary embed
+def orphaned_carrier_summary_embed(summary_text):
+    embed = discord.Embed(
+        title="🔎 ORPHANED FLEET CARRIERS",
+        description="The following Fleet Carriers' owners could not be resolved and are likely not present on the server. Note **occasionally member lookups can fail for valid members**.\n\n"
+                    f"{summary_text}\n\n"
+                    "`✗ Cancel` to do nothing\n`❕ Exclude Carriers` to temporarily exclude carriers from purging using their DBIDs as listed above\n"
+                    "`✔ Purge Listed Carriers` to **permanently** delete all carriers listed above from the database.",
+        color=constants.EMBED_COLOUR_QU
+    )
+    return embed

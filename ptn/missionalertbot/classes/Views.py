@@ -22,14 +22,15 @@ import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import seconds_long, o7_emoji, bot_spam_channel, bot, fc_complete_emoji, bot_command_channel
 
 # import local classes
-import ptn.missionalertbot.classes.CommunityCarrierData as CommunityCarrierData
+from ptn.missionalertbot.classes.CarrierData import CarrierData
+from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 
 # import local modules
 from ptn.missionalertbot.database.database import delete_nominee_from_db, delete_carrier_from_db, _update_carrier_details_in_database, find_carrier, CarrierDbFields, \
     mission_db, missions_conn, add_carrier_to_database
 from ptn.missionalertbot.modules.DateString import get_mission_delete_hammertime
 from ptn.missionalertbot.modules.Embeds import _configure_all_carrier_detail_embed, _generate_cc_notice_embed, role_removed_embed, role_granted_embed, cc_renamed_embed, \
-    _add_common_embed_fields
+    _add_common_embed_fields, orphaned_carrier_summary_embed
 from ptn.missionalertbot.modules.ErrorHandler import GenericError, on_generic_error, CustomError, AsyncioTimeoutError
 from ptn.missionalertbot.modules.helpers import _remove_cc_manager
 from ptn.missionalertbot.modules.MissionCleaner import _cleanup_completed_mission
@@ -928,3 +929,140 @@ class AddCarrierButtons(View):
 
         else:
             await self.message.edit(view=None)
+
+
+# buttons for carrier purge command
+class ConfirmPurgeView(View):
+    def __init__(self, original_embed: discord.Embed, carrier_list, author: typing.Union[discord.Member, discord.User]):
+        self.original_embed = original_embed
+        self.carrier_list = carrier_list
+        self.author = author
+        super().__init__(timeout=180)
+
+
+    @discord.ui.button(label='✗ Cancel', style=discord.ButtonStyle.secondary, custom_id='purge_cancel')
+    async def purge_cancel_button(self, interaction: discord.Interaction, button):
+        print("User cancelled carrier purge.")
+        embed = self.original_embed
+        embed.set_footer(text="❎ No action taken.")
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    @discord.ui.button(label='❕ Exclude Carriers', style=discord.ButtonStyle.primary, custom_id='purge_exclude')
+    async def purge_exclude_button(self, interaction: discord.Interaction, button):
+        print("User clicked Exclude")
+        await interaction.response.send_modal(PurgeExcludeModal(self.original_embed, self.carrier_list, self.author))
+
+    @discord.ui.button(label='✔ Purge Listed Carriers', style=discord.ButtonStyle.danger, custom_id='purge_dopurge')
+    async def purge_dopurge_button(self, interaction: discord.Interaction, button):
+        print("User clicked purge...")
+        spamchannel = bot.get_channel(bot_spam_channel())
+        carrier: CarrierData
+        for carrier in self.carrier_list:
+            try:
+                print(f"⏳ Deleting {carrier.carrier_long_name}...")
+                await delete_carrier_from_db(carrier.pid)
+                embed = discord.Embed(
+                    description=f"✅ Deleted `{carrier.pid}` - `{carrier.carrier_long_name}` with ownerid `{carrier.ownerid}`",
+                    color=constants.EMBED_COLOUR_OK
+                )
+                print("▶ Notifying user...")
+                await interaction.channel.send(embed=embed)
+
+                embed = discord.Embed(
+                    description=f"💥 `{carrier.carrier_long_name}` (`{carrier.pid}`) with ownerid `{carrier.ownerid}` was deleted by {interaction.user} using `/carrier purge`",
+                    color=constants.EMBED_COLOUR_WARNING
+                )
+
+                await spamchannel.send(embed=embed)
+
+            except Exception as e:
+                error = f"Could not delete `{carrier.pid}` - `{carrier.carrier_long_name}` with ownerid `{carrier.ownerid}`: `{e}`"
+                try:
+                    raise CustomError(error)
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+        embed = self.original_embed
+        embed.set_footer(text="✔ Listed carriers were purged.")
+
+        await interaction.response.edit_message(embed=embed, view=None)
+
+
+    async def on_timeout(self): 
+        # remove buttons
+        self.clear_items()
+        print("View timed out")
+
+        self.message: discord.Message
+
+        message = await self.message.channel.fetch_message(self.message.id)
+
+        embed: discord.Embed = message.embeds[0]
+
+        if embed.footer is not None:
+            # return a message to the user that the interaction has timed out
+            embed.set_footer(text="⏲ Timed out.")
+
+            try:
+                await self.message.edit(embed=embed, view=self)
+            except Exception as e:
+                print(f'Failed applying timeout: {e}')
+
+        else:
+            await self.message.edit(view=None)
+
+
+class PurgeExcludeModal(Modal):
+    def __init__(self, original_embed, carrier_list, author, title = 'Exclude Carriers from Purge', timeout = None) -> None:
+        self.original_embed = original_embed
+        self.carrier_list = carrier_list
+        self.author = author
+        super().__init__(title=title, timeout=timeout)
+
+    excludes = discord.ui.TextInput(
+        label='Database IDs to exclude',
+        placeholder='Separate with commas, e.g. "2, 54, 176"',
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        print(f"✍ User entry: {self.excludes}")
+        try:
+            # turn entries into a list of ints
+            dbid_list = self.excludes.value.split(',')
+            numeric_dbid_list = [int(value.strip()) for value in dbid_list]
+            print(f"📝 Formatted exclusion list: {numeric_dbid_list}")
+
+            carrier: CarrierData
+
+            new_carrier_list = [carrier for carrier in self.carrier_list if carrier.pid not in numeric_dbid_list]
+
+            # exit if no more orphans found
+            if len(new_carrier_list) == 0:
+                print("No more orphaned carriers found.")
+                embed = discord.Embed(
+                    description="🔍 No more orphaned carriers found.",
+                    color = constants.EMBED_COLOUR_OK
+                )
+                await interaction.response.edit_message(embed=embed, view=None)
+                return
+
+
+            new_summary_list = []
+
+            for carrier in new_carrier_list:
+                new_summary_list.append(f"**{carrier.carrier_long_name}** ({carrier.carrier_identifier}) DBID `{carrier.pid}` Owner `{carrier.ownerid}` <@{carrier.ownerid}>")
+
+            new_summary_text = "\n".join(["- " + string for string in new_summary_list])
+
+            new_embed = orphaned_carrier_summary_embed(new_summary_text)
+
+            view = ConfirmPurgeView(new_embed, new_carrier_list, self.author)
+
+            await interaction.response.edit_message(embed = new_embed, view = view)
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)

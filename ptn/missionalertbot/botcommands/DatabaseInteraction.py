@@ -8,29 +8,31 @@ import asyncio
 import copy
 import os
 import re
+from typing import List
 
 # import discord.py
 import discord
 from discord import app_commands
+from discord.app_commands import Group, command, describe
 from discord.ext import commands
 
 # local classes
 from ptn.missionalertbot.classes.CarrierData import CarrierData
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 from ptn.missionalertbot.classes.NomineesData import NomineesData
-from ptn.missionalertbot.classes.Views import db_delete_View, BroadcastView, CarrierEditView, MissionDeleteView, AddCarrierButtons
+from ptn.missionalertbot.classes.Views import db_delete_View, BroadcastView, CarrierEditView, MissionDeleteView, AddCarrierButtons, ConfirmPurgeView
 
 # local constants
 import ptn.missionalertbot.constants as constants
 from ptn.missionalertbot.constants import bot, cmentor_role, admin_role, cteam_bot_channel, cteam_bot_channel, bot_command_channel, cc_role, \
-    admin_role, mod_role, bot_spam_channel, fc_complete_emoji
+    admin_role, mod_role, bot_spam_channel, fc_complete_emoji, get_guild
 
 # local modules
 from ptn.missionalertbot.database.database import find_nominee_with_id, carrier_db, CarrierDbFields, find_carrier, backup_database, \
     add_carrier_to_database, find_carriers_mult, find_commodity, find_community_carrier, CCDbFields, find_mission, find_opt_ins
 from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, CustomError, on_generic_error, GenericError
 from ptn.missionalertbot.modules.helpers import check_roles, check_command_channel, _regex_alphanumeric_with_hyphens, extract_carrier_ident_strings
-from ptn.missionalertbot.modules.Embeds import _add_common_embed_fields, _configure_all_carrier_detail_embed
+from ptn.missionalertbot.modules.Embeds import _add_common_embed_fields, _configure_all_carrier_detail_embed, orphaned_carrier_summary_embed
 from ptn.missionalertbot.modules.DateString import get_inactive_hammertime
 
 
@@ -285,16 +287,78 @@ class DatabaseInteraction(commands.Cog):
     Carrier DB commands
     """
 
+    carrier_group = Group(name='carrier', description='Carrier DB commands')
+
+    # purge database of carrier owners who are no longer on the server
+    @carrier_group.command(name='purge', description='Generate a list of carriers belonging to departed owners, with option to purge.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def purge(self, interaction: discord.Interaction):
+        print(f"Carrier database purge called by {interaction.user}")
+
+        embed = discord.Embed(
+            description="⏳ Please wait a moment...",
+            color=constants.EMBED_COLOUR_QU
+        )
+        await interaction.response.send_message(embed=embed) # tell the user we're working on it
+
+        async with interaction.channel.typing():
+            # define empty list of candidate carriers
+            carrier_list = []
+            summary_list = []
+
+            # define guild
+            guild = await get_guild()
+
+            # get all carriers from database
+            # TODO: paginate this for future-proofing
+            carrier_db.execute(f"""
+                SELECT * from carriers
+                               """)
+            carrier_data: CarrierData = [CarrierData(carrier) for carrier in carrier_db.fetchall()]
+
+            # check if owner exists on server
+            carrier: CarrierData
+            for carrier in carrier_data:
+                owner = None
+                try:
+                    owner = guild.get_member(carrier.ownerid)
+                except:
+                    print(f"No active owner found for: {carrier}")
+                    owner = None
+                if not owner:
+                    carrier_list.append(carrier)
+                    summary_list.append(f"**{carrier.carrier_long_name}** ({carrier.carrier_identifier}) DBID `{carrier.pid}` Owner `{carrier.ownerid}` <@{carrier.ownerid}>")
+
+        # exit if no orphans found
+        if len(carrier_list) == 0:
+            print("No orphaned carriers found.")
+            embed = discord.Embed(
+                description="🔍 No orphaned carriers found.",
+                color = constants.EMBED_COLOUR_OK
+            )
+            await interaction.edit_original_response(embed=embed)
+            return
+
+        summary_text = "\n".join(["- " + string for string in summary_list])
+        # generate summary embed
+        embed = orphaned_carrier_summary_embed(summary_text)
+
+        view = ConfirmPurgeView(embed, carrier_list, interaction.user)
+
+        await interaction.edit_original_response(embed=embed, view=view)
+
+        view.message = await interaction.original_response()
 
     # add FC to database
-    @app_commands.command(name='carrier_add', description='Add a Fleet Carrier to the database.')
-    @app_commands.describe(short_name='The name used by the ;stock command.',
+    @carrier_group.command(name='add', description='Add a Fleet Carrier to the database.')
+    @describe(short_name='The name used by the ;stock command.',
                            long_name='The full name of the Fleet Carrier (will be converted to UPPERCASE).',
                            carrier_id='The carrier\'s registration in the format XXX-XXX.',
                            owner_id='The Discord ID of the carrier\'s owner.')
     @check_roles([admin_role()])
     @check_command_channel(bot_command_channel())
-    async def carrier_add(self, interaction: discord.Interaction, short_name: str, long_name: str, carrier_id: str, owner_id: str):
+    async def add(self, interaction: discord.Interaction, short_name: str, long_name: str, carrier_id: str, owner_id: str):
 
         # check the ID code is correct format (thanks boozebot code!)
         if not re.match(r"\w{3}-\w{3}", carrier_id):
@@ -368,11 +432,11 @@ class DatabaseInteraction(commands.Cog):
 
 
     # remove FC from database
-    @app_commands.command(name='carrier_delete', description='Delete a Fleet Carrier from the database using its database entry ID#.',)
-    @app_commands.describe(db_id='The database ID number of the carrier to delete. Use /find to retrieve the carrier ID.')
+    @carrier_group.command(name='delete', description='Delete a Fleet Carrier from the database using its database entry ID#.',)
+    @describe(db_id='The database ID number of the carrier to delete. Use /find to retrieve the carrier ID.')
     @check_roles([admin_role()])
     @check_command_channel(bot_command_channel())
-    async def carrier_delete(self, interaction: discord.Interaction, db_id: int):
+    async def delete(self, interaction: discord.Interaction, db_id: int):
         print(f"{interaction.command.name} called by {interaction.user.display_name}")
 
         try:
@@ -407,12 +471,12 @@ class DatabaseInteraction(commands.Cog):
             print(f'Error while finding carrier to delete: {e}.')
 
 
-    @app_commands.command(name="carrier_edit",
+    @carrier_group.command(name="edit",
                           description="Edit a specific carrier in the database")
-    @app_commands.describe(carrier_name_search_term='A string to search for that should match part of the target carrier\'s full name.')
+    @describe(carrier_name_search_term='A string to search for that should match part of the target carrier\'s full name.')
     @check_roles([admin_role()])
     @check_command_channel(bot_command_channel())
-    async def _carrier_edit(self, interaction: discord.Interaction, carrier_name_search_term: str):
+    async def edit(self, interaction: discord.Interaction, carrier_name_search_term: str):
         """
         Edits a carriers information in the database. Provide a carrier name that can be partially matched and follow the
         steps.
@@ -633,9 +697,9 @@ class DatabaseInteraction(commands.Cog):
     # slash version of m.find, private
     # TODO: replace with broadcast option
     # TODO: implement multiple result logic from m.find
-    @app_commands.command(name="find",
+    @carrier_group.command(name="find",
                           description="Private command: Search for a fleet carrier by partial match for its name.")
-    @app_commands.describe(carrier_name_search_term='Part of the full name of the carrier you wish to find.')
+    @describe(carrier_name_search_term='Part of the full name of the carrier you wish to find.')
     async def _find(self, interaction: discord.Interaction, carrier_name_search_term: str):
         print(f"{interaction.user} used /find for '{carrier_name_search_term}' in {interaction.channel}")
 
