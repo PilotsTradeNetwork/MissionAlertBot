@@ -29,11 +29,10 @@ from ptn.missionalertbot.constants import bot, cmentor_role, admin_role, cteam_b
 
 # local modules
 from ptn.missionalertbot.database.database import find_nominee_with_id, carrier_db, CarrierDbFields, find_carrier, backup_database, \
-    add_carrier_to_database, find_carriers_mult, find_commodity, find_community_carrier, CCDbFields, find_mission, find_opt_ins
+    add_carrier_to_database, find_carriers_mult, find_commodity, find_community_carrier, CCDbFields
 from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, CustomError, on_generic_error, GenericError
 from ptn.missionalertbot.modules.helpers import check_roles, check_command_channel, _regex_alphanumeric_with_hyphens, extract_carrier_ident_strings
 from ptn.missionalertbot.modules.Embeds import _add_common_embed_fields, _configure_all_carrier_detail_embed, orphaned_carrier_summary_embed
-from ptn.missionalertbot.modules.DateString import get_inactive_hammertime
 
 
 @bot.tree.context_menu(name='Add Carrier')
@@ -918,46 +917,6 @@ class DatabaseInteraction(commands.Cog):
             print('Error: {}'.format(e))
 
 
-    # monitor CCO opt-ins
-    @app_commands.command(name="admin_list_optins",
-                          description="Private command: Use to view CCO active opt-ins.")
-    async def _admin_list_optins(self, interaction: discord.Interaction):
-
-        try:
-            print('⏳ Searching for opt-in markers in db...')
-            # look for matches for the owner ID in the carrier DB
-            carrier_list = find_opt_ins()
-
-            if not carrier_list:
-                await interaction.response.send_message(f"No opt-ins found.", ephemeral=True)
-                return print(f"✖ No opt-ins found.")
-
-            else:
-                print("▶ Returning list of opt-ins")
-                embed = discord.Embed(
-                    title=f"⚡ LISTING CCO OPT-INS",
-                    color=constants.EMBED_COLOUR_OK
-                )
-
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-
-                for carrier_data in carrier_list:
-                    hammertime = get_inactive_hammertime(carrier_data.lasttrade)
-                    embed = discord.Embed(
-                        description=f'User **{carrier_data.carrier_long_name}** <@{carrier_data.ownerid}> at DBID {carrier_data.pid}' \
-                                    f' opted-in at <t:{carrier_data.lasttrade}>. Expires {hammertime}.',
-                        color=constants.EMBED_COLOUR_QU
-                    )
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                    await asyncio.sleep(1) # lip service to try to avoid a rate limit
-
-        except Exception as e:
-            try:
-                raise GenericError(e)
-            except Exception as e:
-                await on_generic_error(interaction, e)
-
-
     """
     Community Carrier search functions
     TODO: update to slash commands
@@ -1097,32 +1056,4 @@ class DatabaseInteraction(commands.Cog):
         else:
             await ctx.send(f"No Community Carrier registered to {owner.display_name}")
 
-
-    # manually delete a mission from the database
-    @app_commands.command(name='admin_delete_mission', description='Manually remove a mission from the database.')
-    @app_commands.describe(carrier='Carrier name to search for in the missions database.')
-    @check_roles([admin_role()])
-    @check_command_channel(bot_command_channel())
-    async def admin_delete_mission(self, interaction: discord.Interaction, carrier: str):
-        print(f"admin_delete_mission called by {interaction.user.display_name} ({interaction.user.id})")
-        mission_data = find_mission(carrier, "carrier")
-        if not mission_data:
-            embed = discord.Embed(
-                description=f"❌ No trade missions found for carriers matching \"**{carrier}\"**.",
-                color=constants.EMBED_COLOUR_ERROR
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            embed = discord.Embed(
-                description=f"Please confirm you want to delete the mission for **{mission_data.carrier_name}**. "\
-                    "This should **only** be done if `/mission complete` and `/cco complete` will not work. " \
-                    "Deleting a mission this way **will** require manual cleanup of any remaining mission elements.",
-                    color=constants.EMBED_COLOUR_QU
-            )
-
-            view=MissionDeleteView(mission_data, interaction.user, embed)
-
-            await interaction.response.send_message(embed=embed, view=view)
-
-            view.message = await interaction.original_response()
 

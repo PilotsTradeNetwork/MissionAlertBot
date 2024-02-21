@@ -167,6 +167,10 @@ def check_mission_channel_lock(channel):
         return False
 
 
+def list_active_locks():
+    return channel_locks
+
+
 # function to stop and quit
 def bot_exit():
     sys.exit("User requested exit.")

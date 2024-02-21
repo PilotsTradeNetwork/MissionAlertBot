@@ -16,7 +16,7 @@ from discord import app_commands
 
 # local classes
 from ptn.missionalertbot.classes.MissionData import MissionData
-from ptn.missionalertbot.classes.Views import MissionCompleteView
+from ptn.missionalertbot.classes.Views import MissionCompleteView, MissionDeleteView
 
 # local constants
 from ptn.missionalertbot._metadata import __version__
@@ -26,12 +26,15 @@ from ptn.missionalertbot.constants import bot, bot_command_channel, bot_dev_chan
 
 # local modules
 from ptn.missionalertbot.database.database import backup_database, find_carrier, find_mission, _is_carrier_channel, \
-    mission_db, carrier_db, carrier_db_lock, carriers_conn, find_nominator_with_id, delete_nominee_by_nominator, find_community_carrier, CCDbFields
+    mission_db, carrier_db, carrier_db_lock, carriers_conn, find_nominator_with_id, delete_nominee_by_nominator, find_community_carrier, \
+    CCDbFields, find_opt_ins
 from ptn.missionalertbot.modules.Embeds import _is_mission_active_embed, _format_missions_embed
-from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error
-from ptn.missionalertbot.modules.helpers import bot_exit, check_roles, check_command_channel, unlock_mission_channel, lock_mission_channel, check_mission_channel_lock
+from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, GenericError, CustomError, on_generic_error
+from ptn.missionalertbot.modules.helpers import bot_exit, check_roles, check_command_channel, unlock_mission_channel, lock_mission_channel, \
+    check_mission_channel_lock, list_active_locks
 from ptn.missionalertbot.modules.BackgroundTasks import lasttrade_cron, _monitor_reddit_comments
 from ptn.missionalertbot.modules.MissionCleaner import check_trade_channels_on_startup
+from ptn.missionalertbot.modules.DateString import get_inactive_hammertime
 
 
 """
@@ -71,10 +74,11 @@ backup - admin/database
 cron_status - admin
 ping - admin
 /greet - elevated roles
-stopquit - admin
-/admin_delete_mission - admin/missions
-/admin_release_channel_lock - admin/missions
-/admin_acquire_channel_lock - admin/missions
+/admin stopquit - admin
+/admin delete_mission - admin/missions
+/admin list_optins - admin/cco
+/admin lock release - admin/missions
+/admin lock acquire - admin/missions
 
 GENERAL - USER-FACING
 ission - mission
@@ -197,13 +201,17 @@ class GeneralCommands(commands.Cog):
                 return await ctx.send(f"Failed to sync bot tree: {e}")
 
 
+    admin_group = Group(name='admin', description='Admin commands')
+
+    lock_group = Group(parent=admin_group, name='lock', description='Channel Lock override commmands')
+
     # manually release a channel lock
-    @app_commands.command(name='admin_release_channel_lock', description='Manually release a designated channel lock object.')
-    @app_commands.describe(channelname='The exact name of the channel as it appears in the settings dialog e.g. ptn-starscape-olympus')
+    @lock_group.command(name='release', description='Manually release a designated channel lock object.')
+    @describe(channelname='The exact name of the channel as it appears in the settings dialog e.g. ptn-starscape-olympus')
     @check_roles([admin_role(), dev_role()])
     @check_command_channel(bot_command_channel())
     async def admin_release_channel_lock(self, interaction: discord.Interaction, channelname: str):
-        print(f"{interaction.user.name} called manual channel_lock release in {interaction.channel.name}")
+        print(f"🔐 {interaction.user.name} called manual channel_lock release for {channelname}")
 
         locked = check_mission_channel_lock(channelname)
 
@@ -235,12 +243,12 @@ class GeneralCommands(commands.Cog):
 
 
     # manually acquire a channel lock
-    @app_commands.command(name='admin_acquire_channel_lock', description='Manually acquire a designated channel lock object. WARNING: DO NOT USE.')
-    @app_commands.describe(channelname='The exact name of the channel as it appears in the settings dialog e.g. ptn-starscape-olympus')
+    @lock_group.command(name='acquire', description='Manually acquire a designated channel lock object. WARNING: DO NOT USE.')
+    @describe(channelname='The exact name of the channel as it appears in the settings dialog e.g. ptn-starscape-olympus')
     @check_roles([admin_role(), dev_role()])
     @check_command_channel(bot_command_channel())
     async def admin_acquire_channel_lock(self, interaction: discord.Interaction, channelname: str):
-        print(f"{interaction.user.name} called manual channel_lock acquisition in {interaction.channel.name}")
+        print(f"🔐 {interaction.user.name} requested manual channel_lock acquisition for {channelname}")
 
         locked = check_mission_channel_lock(channelname)
 
@@ -270,38 +278,159 @@ class GeneralCommands(commands.Cog):
                 )
                 await interaction.response.send_message(embed=embed)
 
+    # display active channel locks
+    @lock_group.command(name='list', description='Display a list of all currently locked channels.')
+    @check_roles([admin_role(), dev_role()])
+    @check_command_channel(bot_command_channel())
+    async def admin_acquire_channel_lock(self, interaction: discord.Interaction):
+        print(f"🔐 admin_list_channel_locks called by {interaction.user}")
+        locked_channels = {}
+        locked_channels = list_active_locks()
+
+        # Populate the embed with the locked channels
+        if not locked_channels:
+            embed = discord.Embed(
+                description="🔓 No channels are currently locked.",
+                color=constants.EMBED_COLOUR_OK
+            )
+
+        else:
+            embed = discord.Embed(
+                title="🔐 LOCKED CHANNELS",
+                description=f"⚠ <@{bot.user.id}> uses an `asyncio.Lock()` function to ensure bot actions affecting channels take place **in order** and **one at a time**. "
+                            "This prevents, e.g., a channel for a completed mission being deleted while a new mission is being created for that channel. "
+                            "Channel locks rarely last more than a few seconds and should **only** be manually released if mission generation/completion is being "
+                            "improperly obstructed by an erroneously unreleased lock.",
+                color=constants.EMBED_COLOUR_WARNING
+            )
+            for channel in locked_channels:
+                embed.add_field(name="Currently Locked:", value=f"`{channel}`", inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
 
     # a command to check the cron status for Fleet Reserve status
-    @commands.command(name='cron_status', help='Check the status of the lasttrade cron task')
+    @admin_group.command(name='cron_status', description='Check the status of the lasttrade cron task')
     @check_roles([admin_role(), dev_role()])
-    async def cron_status(self, ctx):
+    async def cron_status(self, interaction: discord.Interaction):
+        print(f"{interaction.user} requested lasttrade cron status")
+
+        embed = discord.Embed()
 
         if not lasttrade_cron.is_running() or lasttrade_cron.failed():
             print("lasttrade cron task has failed, restarting.")
-            await ctx.send('lasttrade cron task has failed, restarting...')
+            embed.description = "🤔 `lasttrade` cron task has failed, restarting..."
+            embed.color = constants.EMBED_COLOUR_WARNING
+            await interaction.response.send_message(embed=embed)
             lasttrade_cron.restart()
         else:
-            nextrun = lasttrade_cron.next_iteration - datetime.now(tz=timezone.utc)
-            await ctx.send(f'lasttrade cron task is running. Next run in {str(nextrun)}')
+            nextrun = int(lasttrade_cron.next_iteration.timestamp())
+            embed.description=f'⏲ `lasttrade` cron task is running. Next run <t:{nextrun}:T> (<t:{nextrun}:R>)'
+            embed.color=constants.EMBED_COLOUR_OK
+            await interaction.response.send_message(embed=embed)
+
 
     # backup databases
-    @commands.command(name='backup', help='Backs up the carrier and mission databases.')
+    @admin_group.command(name='backup', description='Backs up the carrier and mission databases.')
     @check_roles([admin_role()])
     @check_command_channel(bot_command_channel())
-    async def backup(self, ctx):
-        print(f"{ctx.author} requested a manual DB backup")
-        backup_database('missions')
-        backup_database('carriers')
-        await ctx.send("Database backup complete.")
+    async def backup(self, interaction: discord.Interaction):
+        print(f"{interaction.user} requested a manual DB backup")
+        try:
+            backup_database('missions')
+            backup_database('carriers')
+        except Exception as e:
+            error = f"Database backup failed: {e}"
+            try:
+                raise CustomError(error)
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
+        embed = discord.Embed(
+            description="✅ Database backup complete.",
+            color=constants.EMBED_COLOUR_OK
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+
+    # manually delete a carrier trade mission from the database
+    @admin_group.command(name='delete_mission', description='Manually remove a carrier trade mission from the database.')
+    @describe(carrier='Carrier name to search for in the missions database.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def admin_delete_mission(self, interaction: discord.Interaction, carrier: str):
+        print(f"admin_delete_mission called by {interaction.user.display_name} ({interaction.user.id})")
+        mission_data = find_mission(carrier, "carrier")
+        if not mission_data:
+            embed = discord.Embed(
+                description=f"❌ No trade missions found for carriers matching \"**{carrier}\"**.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embed = discord.Embed(
+                description=f"Please confirm you want to delete the mission for **{mission_data.carrier_name}**. "\
+                    "This should **only** be done if `/mission complete` and `/cco complete` will not work. " \
+                    "Deleting a mission this way **will** require manual cleanup of any remaining mission elements.",
+                    color=constants.EMBED_COLOUR_QU
+            )
+
+            view=MissionDeleteView(mission_data, interaction.user, embed)
+
+            await interaction.response.send_message(embed=embed, view=view)
+
+            view.message = await interaction.original_response()
+
+
+    # monitor CCO opt-ins
+    @admin_group.command(name="list_cco_optins",
+                          description="Private command: Use to view CCO active opt-ins.")
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def _admin_list_optins(self, interaction: discord.Interaction):
+
+        try:
+            print('⏳ Searching for opt-in markers in db...')
+            # look for matches for the owner ID in the carrier DB
+            carrier_list = find_opt_ins()
+
+            if not carrier_list:
+                await interaction.response.send_message(f"No opt-ins found.", ephemeral=True)
+                return print(f"✖ No opt-ins found.")
+
+            else:
+                print("▶ Returning list of opt-ins")
+                embed = discord.Embed(
+                    title=f"⚡ LISTING CCO OPT-INS",
+                    color=constants.EMBED_COLOUR_OK
+                )
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                for carrier_data in carrier_list:
+                    hammertime = get_inactive_hammertime(carrier_data.lasttrade)
+                    embed = discord.Embed(
+                        description=f'User **{carrier_data.carrier_long_name}** <@{carrier_data.ownerid}> at DBID {carrier_data.pid}' \
+                                    f' opted-in at <t:{carrier_data.lasttrade}>. Expires {hammertime}.',
+                        color=constants.EMBED_COLOUR_QU
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    await asyncio.sleep(1) # lip service to try to avoid a rate limit
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
 
 
     # forceably quit the bot
-    # TODO: make this graceful
-    @commands.command(name='stopquit', help="Stops the bots process on the VM, ending all functions.")
+    @admin_group.command(name='stopquit', description="Forcibly stop the bot in an emergency. Requires host access to restart.")
     @check_roles([admin_role()])
     @check_command_channel(bot_command_channel())
-    async def stopquit(self, ctx):
-        await ctx.send(f"k thx bye")
+    async def stopquit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f"https://media1.tenor.com/m/I6bSd_xNoc0AAAAC/hooray-its-weekend.gif")
         bot_exit()
 
 

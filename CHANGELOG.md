@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.3.8
+- All admin commands are now interactions in the 'admin' group:
+    - `/admin_release_channel_lock` is now `/admin lock release`
+    - `/admin_acquire_channel_lock` is now `/admin lock acquire`
+    - `m.cron_status` is now `/admin cron_status`
+    - `m.backup` is now `/admin backup`
+    - `m.stopquit` is now `/admin stopquit`
+    - `/admin_list_optins` is now `/admin list_cco_optins` and has moved to `GeneralCommands.py`
+    - `/admin_delete_mission` is now `/admin delete_mission` and has moved to `GeneralCommands.py`
+- Various cosmetic improvements to above commands
+- New commmand: `/admin lock list` - lists all active channel locks for debugging purposes
+
+
 ## 2.3.7a
 - Reverted `/carrier find` change because Discord is stupid
 
