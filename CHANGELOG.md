@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.1
+- Fixed reference to `;stock` in mission embed
+
+
 ## 2.4.0
 Integrated stock tracking features from stockbot (with thanks to DudeInCorner and Durzo):
 - `/stock`:

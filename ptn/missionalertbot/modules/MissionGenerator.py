@@ -495,7 +495,7 @@ async def return_discord_channel_embeds(mission_params: MissionParams):
         edmc_text = "\n\n🤫 This mission is flagged **EDMC-OFF**. Please disable/quit **all journal reporting apps** such as EDMC, EDDiscovery, etc."
     else:
         edmc_text = f"\n\n:warning: cAPI stock is updated once per hour. Run [EDMC](https://github.com/EDCD/EDMarketConnector/wiki/Installation-&-Setup) " \
-                    f"and use `;stock {carrier_data.carrier_short_name} inara` for more accurate stock tracking."
+                    f"and use `/stock source:Inara` for more frequent stock updates."
     help_description = f"✅ Use </mission complete:{mcomplete_id()}> in this channel if the mission is completed, or unable to be completed (e.g. because of a station price change, or supply exhaustion)." \
                        f"\n\n💡 Need help? Here's our [complete guide to PTN trade missions](https://pilotstradenetwork.com/fleet-carrier-trade-missions/).{edmc_text}"
 
