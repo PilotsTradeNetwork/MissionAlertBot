@@ -3,6 +3,14 @@ A module containing embeds that are required by multiple functions.
 
 STATUS: This file is complete, but needs to be imported into modules that use it
 """
+import sys
+
+if __name__ == "__main__":
+    # Prevent accidental independent execution of this file 
+    print("This script should not be run independently. Please run it through application.py.")
+    # Exit the script with an error code
+    sys.exit(1)
+
 
 # import libraries
 import os
@@ -23,7 +31,6 @@ from ptn.missionalertbot.constants import ptn_logo_discord
 
 #import local modules
 from ptn.missionalertbot.database.database import find_mission
-
 
 # confirm edit mission embed
 def _confirm_edit_mission_embed(mission_params: MissionParams):
@@ -115,10 +122,11 @@ async def _configure_all_carrier_detail_embed(embed, carrier_data: CarrierData):
     """
     embed.add_field(name='Carrier Name', value=f'{carrier_data.carrier_long_name}', inline=True)
     embed.add_field(name='Carrier Identifier', value=f'{carrier_data.carrier_identifier}', inline=True)
-    embed.add_field(name='Short Name', value=f'{carrier_data.carrier_short_name}', inline=True)
+    # embed.add_field(name='Short Name', value=f'{carrier_data.carrier_short_name}', inline=True)
     embed.add_field(name='Discord Channel', value=f'#{carrier_data.discord_channel}', inline=True)
     embed.add_field(name='Carrier Owner', value=f'<@{carrier_data.ownerid}>', inline=True)
     embed.add_field(name='DB ID', value=f'{carrier_data.pid}', inline=True)
+    embed.add_field(name='Frontier API', value='✅ Enabled' if carrier_data.capi else 'Disabled', inline=True)
     embed.set_footer(text="Note: DB ID is not an editable field.")
     return embed
 
@@ -147,7 +155,7 @@ async def _generate_cc_notice_embed(channel_id, user, avatar, title, message, im
     return embed, thumb_file
 
 # add common embed fields for carrier info
-def _add_common_embed_fields(embed, carrier_data, ctx_interaction):
+def _add_common_embed_fields(embed, carrier_data: CarrierData, ctx_interaction):
     embed.add_field(name="Carrier Name", value=f"{carrier_data.carrier_long_name}", inline=True)
     embed.add_field(name="Carrier ID", value=f"{carrier_data.carrier_identifier}", inline=True)
     embed.add_field(name="Database Entry", value=f"{carrier_data.pid}", inline=True)
@@ -158,7 +166,7 @@ def _add_common_embed_fields(embed, carrier_data, ctx_interaction):
     embed.add_field(name="Discord Channel", value=f"{discord_channel}", inline=True)
 
     embed.add_field(name="Owner", value=f"<@{carrier_data.ownerid}>", inline=True)
-    embed.add_field(name="Market Data", value=f"`;stock {carrier_data.carrier_short_name}`", inline=True)
+    embed.add_field(name="Frontier API", value="✅ Enabled" if carrier_data.capi else "Disabled", inline=True)
     embed.add_field(name="Last Trade", value=f"<t:{carrier_data.lasttrade}> (<t:{carrier_data.lasttrade}:R>)", inline=True)
     # shortname is not relevant to users and will be auto-generated in future
     return embed
@@ -331,6 +339,14 @@ def orphaned_carrier_summary_embed(summary_text):
                     f"{summary_text}\n\n"
                     "`✗ Cancel` to do nothing\n`❕ Exclude Carriers` to temporarily exclude carriers from purging using their DBIDs as listed above\n"
                     "`✔ Purge Listed Carriers` to **permanently** delete all carriers listed above from the database.",
+        color=constants.EMBED_COLOUR_QU
+    )
+    return embed
+
+# generic "please wait" embed
+def please_wait_embed():
+    embed = discord.Embed(
+        description="⏳ Please wait a moment...",
         color=constants.EMBED_COLOUR_QU
     )
     return embed

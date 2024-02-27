@@ -10,6 +10,7 @@ constants -> database -> helpers/embeds -> Views -> commands
 # libraries
 import ast
 import asyncpraw
+import asyncio
 import os
 import discord
 from discord.ext import commands
@@ -32,8 +33,12 @@ RESOURCE_DIR = os.getenv('PTN_MAB_RESOURCE_DIR', TESTING_RESOURCE_PATH)
 DB_PATH = os.path.join(DATA_DIR, 'database')
 CARRIERS_DB_PATH = os.path.join(DATA_DIR, 'database', 'carriers.db')
 MISSIONS_DB_PATH = os.path.join(DATA_DIR, 'database', 'missions.db')
+WMM_DB_PATH = os.path.join(DATA_DIR, 'database', 'wmm.db')
 BACKUP_DB_PATH = os.path.join(DATA_DIR, 'database', 'backups')
 SQL_PATH = os.path.join(DATA_DIR, 'database', 'db_sql')
+SETTINGS_PATH = os.path.join(DATA_DIR, 'settings')
+SETTINGS_FILE = 'settings.txt'
+SETTINGS_FILE_PATH = os.path.join(SETTINGS_PATH, SETTINGS_FILE)
 
 # image paths
 IMAGE_PATH = os.path.join(DATA_DIR, 'images')
@@ -55,9 +60,17 @@ load_dotenv(os.path.join(DATA_DIR, '.env'))
 # define bot token
 TOKEN = os.getenv('MAB_BOT_DISCORD_TOKEN_PROD') if _production else os.getenv('MAB_BOT_DISCORD_TOKEN_TESTING')
 
-
 # define bot object
 bot = commands.Bot(command_prefix='m.', intents=discord.Intents.all())
+
+# PTN2FDevOAuth for cAPI communication
+API_HOST = os.getenv('API_HOST')
+API_TOKEN = os.getenv('API_TOKEN')
+
+
+# default settings.txt values
+wmm_autostart = False
+commandid_stock = None
 
 
 # Production variables
@@ -69,6 +82,10 @@ PROD_WINE_ALERTS_LOADING_ID = 849249916676603944 # booze alerts channel ID for P
 PROD_WINE_ALERTS_UNLOADING_ID = 932918003639648306 # booze alerts channel ID for PTN main server [unloading]
 PROD_SUB_REDDIT = "PilotsTradeNetwork"  # subreddit for live
 PROD_CHANNEL_UPVOTES = 828279034387103744    # The ID for the updoots channel
+PROD_CHANNEL_WMM_STOCK = 847483747388358686 # wmm-stock channel for hauler information
+PROD_CHANNEL_CCO_WMM_SUPPLIES = 990709169474633788 # CCO WMM tracking channel
+PROD_CHANNEL_CCO_WMM_DISCUSSION = 827972977727242250 # CCO WMM chat channel
+PROD_CHANNEL_CCO_GENERAL_CHAT = 800094622746542140 # CCO general chat channel
 PROD_REDDIT_CHANNEL = 878029150336720936 # the ID for the Reddit Comments channel
 PROD_MISSION_COMMAND_CHANNEL = 822603169104265276    # The ID for the production mission channel
 PROD_BOT_COMMAND_CHANNEL = 802523724674891826   # Bot backend commands are locked to a channel
@@ -131,6 +148,10 @@ TEST_WINE_ALERTS_LOADING_ID = 870425638127943700 # booze alerts channel ID for P
 TEST_WINE_ALERTS_UNLOADING_ID = 870425638127943700 # booze alerts channel ID for PTN test server [unloading]
 TEST_SUB_REDDIT = "PTNBotTesting"  # subreddit for testing
 TEST_CHANNEL_UPVOTES = 839918504676294666    # The ID for the updoots channel on test
+TEST_CHANNEL_WMM_STOCK = 1210635262854697020 # wmm stock channel
+TEST_CHANNEL_CCO_WMM_SUPPLIES = 1210628703319756800 # CCO WMM tracking channel
+TEST_CHANNEL_CCO_WMM_DISCUSSION = 1210629377361051658 # CCO WMM chat channel
+TEST_CHANNEL_CCO_GENERAL_CHAT = 1210629377361051658 # CCO general chat channel
 TEST_REDDIT_CHANNEL = 878029350933520484 # the ID for the Reddit Comments channel
 TEST_MISSION_COMMAND_CHANNEL = 842138710651961364    # The ID for the production mission channel
 TEST_BOT_COMMAND_CHANNEL = 842152343441375283   # Bot backend commands are locked to a channel
@@ -192,6 +213,7 @@ EMBED_COLOUR_ERROR = 0x800000           # dark red
 EMBED_COLOUR_QU = 0x00d9ff              # que?
 EMBED_COLOUR_OK = 0x80ff80              # we're good here thanks, how are you?
 EMBED_COLOUR_WARNING = 0xFFD700         # and it was all yellow
+EMBED_COLOUR_EXPIRED = 0x808080         # grey
 
 
 # defining fonts for pillow use
@@ -215,6 +237,32 @@ commodities_common = [
     "Tritium",
     "Wine"
 ]
+
+# commodities used in WMM supply
+commodities_wmm = [
+  "Indite",
+  "Bertrandite",
+  "Gold",
+  "Silver"
+]
+
+# WMM stations
+locations_wmm = [
+  "Swanson",
+  "Malerba",
+  "Darlton",
+  "Burkin",
+  "Middle"
+]
+
+# define global WMM trigger 
+wmm_trigger = False
+
+# define global WMM check timer
+wmm_slept_for = 0
+
+# define default WMM tracking interval
+wmm_interval = 3600 # 1 hour
 
 
 # random gifs and images
@@ -299,10 +347,10 @@ OPT_IN_ID = 'OPT-INX'
 
 # images and icons used in mission embeds
 BLANKLINE_400PX = 'https://pilotstradenetwork.com/wp-content/uploads/2023/01/400x1-00000000.png'
-ICON_BUY_FROM_STATION = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_buy_from_station.png'
-ICON_BUY_FROM_CARRIER = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_buy_from_carrier.png'
-ICON_SELL_TO_STATION = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_sell_to_station.png'
-ICON_SELL_TO_CARRIER = 'https://pilotstradenetwork.com/wp-content/uploads/2023/10/mab_sell_to_carrier.png'
+ICON_BUY_FROM_STATION = 'https://pilotstradenetwork.com/wp-content/uploads/2024/02/mab_buy_from_station.png'
+ICON_BUY_FROM_CARRIER = 'https://pilotstradenetwork.com/wp-content/uploads/2024/02/mab_buy_from_carrier.png'
+ICON_SELL_TO_STATION = 'https://pilotstradenetwork.com/wp-content/uploads/2024/02/mab_sell_to_station.png'
+ICON_SELL_TO_CARRIER = 'https://pilotstradenetwork.com/wp-content/uploads/2024/02/mab_sell_to_carrier.png'
 ICON_DATA = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/Data.png'
 ICON_DISCORD_CIRCLE = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/discord-icon-in-circle.png'
 ICON_DISCORD_PING = 'https://pilotstradenetwork.com/wp-content/uploads/2023/06/discord-notification-dot-icon.png'
@@ -323,7 +371,6 @@ DISCORD_INVITE_URL = 'https://discord.gg/ptn'
 # link to our Discord by way of Josh's original post on Reddit
 REDDIT_DISCORD_LINK_URL = \
     'https://discord.gg/ptn'
-
 
 # define constants based on prod or test environment
 def reddit_flair_mission_start():
@@ -351,6 +398,18 @@ def wine_alerts_unloading_channel():
 
 def channel_upvotes():
   return PROD_CHANNEL_UPVOTES if _production else TEST_CHANNEL_UPVOTES
+
+def channel_cco_wmm_supplies():
+  return PROD_CHANNEL_CCO_WMM_SUPPLIES if _production else TEST_CHANNEL_CCO_WMM_SUPPLIES
+
+def channel_wmm_stock():
+  return PROD_CHANNEL_WMM_STOCK if _production else TEST_CHANNEL_WMM_STOCK
+
+def channel_cco_wmm_talk():
+  return PROD_CHANNEL_CCO_WMM_DISCUSSION if _production else TEST_CHANNEL_CCO_WMM_DISCUSSION
+
+def channel_cco_general_chat():
+  return PROD_CHANNEL_CCO_GENERAL_CHAT if _production else TEST_CHANNEL_CCO_GENERAL_CHAT
 
 def reddit_channel():
   return PROD_REDDIT_CHANNEL if _production else TEST_REDDIT_CHANNEL

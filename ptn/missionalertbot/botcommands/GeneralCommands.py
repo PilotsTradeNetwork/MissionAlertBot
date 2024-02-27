@@ -7,16 +7,17 @@ A Cog for general bot commands that don't fit in other categories.
 import asyncio
 from datetime import datetime, timezone
 import random
+import traceback
 
 # discord.py
 import discord
-from discord.app_commands import Group, describe
+from discord.app_commands import Group, describe, Choice
 from discord.ext import commands
 from discord import app_commands
 
 # local classes
 from ptn.missionalertbot.classes.MissionData import MissionData
-from ptn.missionalertbot.classes.Views import MissionCompleteView, MissionDeleteView
+from ptn.missionalertbot.classes.Views import MissionCompleteView, MissionDeleteView, ConfirmCAPISync
 
 # local constants
 from ptn.missionalertbot._metadata import __version__
@@ -27,14 +28,14 @@ from ptn.missionalertbot.constants import bot, bot_command_channel, bot_dev_chan
 # local modules
 from ptn.missionalertbot.database.database import backup_database, find_carrier, find_mission, _is_carrier_channel, \
     mission_db, carrier_db, carrier_db_lock, carriers_conn, find_nominator_with_id, delete_nominee_by_nominator, find_community_carrier, \
-    CCDbFields, find_opt_ins
-from ptn.missionalertbot.modules.Embeds import _is_mission_active_embed, _format_missions_embed
+    CCDbFields, find_opt_ins, Settings, print_settings_file
+from ptn.missionalertbot.modules.Embeds import _is_mission_active_embed, _format_missions_embed, please_wait_embed
 from ptn.missionalertbot.modules.ErrorHandler import on_app_command_error, GenericError, CustomError, on_generic_error
 from ptn.missionalertbot.modules.helpers import bot_exit, check_roles, check_command_channel, unlock_mission_channel, lock_mission_channel, \
     check_mission_channel_lock, list_active_locks
-from ptn.missionalertbot.modules.BackgroundTasks import lasttrade_cron, _monitor_reddit_comments
+from ptn.missionalertbot.modules.BackgroundTasks import lasttrade_cron, _monitor_reddit_comments, start_wmm_task, wmm_stock
 from ptn.missionalertbot.modules.MissionCleaner import check_trade_channels_on_startup
-from ptn.missionalertbot.modules.DateString import get_inactive_hammertime
+from ptn.missionalertbot.modules.DateString import get_inactive_hammertime, get_formatted_date_string
 
 
 """
@@ -135,6 +136,12 @@ class GeneralCommands(commands.Cog):
         # start monitoring reddit comments if not running
         if not _monitor_reddit_comments.is_running():
             _monitor_reddit_comments.start()
+        # start wmm loop if not running, and our settings.txt allows it
+        if constants.wmm_autostart:
+            if not wmm_stock.is_running():
+                await start_wmm_task()
+        else:
+            print("⚠ WMM task autostart disabled, skipping")
 
 
     # processed on disconnect
@@ -204,6 +211,106 @@ class GeneralCommands(commands.Cog):
     admin_group = Group(name='admin', description='Admin commands')
 
     lock_group = Group(parent=admin_group, name='lock', description='Channel Lock override commmands')
+
+    wmm_group = Group(parent=admin_group, name='wmm', description='WMM admin commands')
+
+    settings_group = Group(parent=admin_group, name='settings', description='settings.txt options')
+
+
+    # command to view settings.txt values
+    @settings_group.command(name='view', description='View settings.txt')
+    @check_roles([admin_role(), dev_role()])
+    @check_command_channel(bot_command_channel())
+    async def admin_settings(self, interaction: discord.Interaction):
+        print(f"/admin settings view called by {interaction.user}")
+
+        try:
+            settings = print_settings_file()
+
+            embed = discord.Embed(
+                description=f"📄 `settings.txt`:\n\n```{settings}```",
+                color=constants.EMBED_COLOUR_OK
+            )
+
+            await interaction.response.send_message(embed=embed)
+
+        except Exception as e:
+            traceback.print_exc()
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+
+    # command to apply settings.txt values
+    @settings_group.command(name='change', description='Change a value in settings.txt')
+    @describe(
+        setting='The setting to change',
+        value='The value to apply'
+        )
+    @app_commands.choices(setting = [
+        Choice(name='WMM Auto Start', value='wmm_autostart'),
+        Choice(name='Stock Command ID', value='commandid_stock')
+    ])
+    @check_roles([admin_role(), dev_role()])
+    @check_command_channel(bot_command_channel())
+    async def admin_settings(self, interaction: discord.Interaction, setting: Choice[str], value: str):
+        print("/admin settings change called for %s %s by %s" % (setting.value, value, interaction.user))
+
+        try:
+            if setting.value == 'wmm_autostart':
+                if not value.lower() in ['true', 'false']:
+                    print("Value not true or false")
+                    embed = discord.Embed(
+                        description="❌ Value must be 'True' or 'False'", 
+                        color=constants.EMBED_COLOUR_ERROR
+                    )
+
+                    return await interaction.response.send_message(embed=embed, ephemeral=True)
+                else:
+                    value = value.title()
+
+            elif setting.value == 'commandid_stock':
+                try:
+                    value = int(value)
+                except ValueError:
+                    print("Value not int")
+                    embed = discord.Embed(
+                        description="❌ Value must be an integer.", 
+                        color=constants.EMBED_COLOUR_ERROR
+                    )
+
+                    return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            print("instantiating settings")
+            settings = Settings()
+            print("updating from file")
+            settings.read_settings_file()
+            print("applying new values")
+            setattr(settings, setting.value, value)
+            settings.write_settings()
+            # apply to our global values
+            constants.wmm_autostart = settings.wmm_autostart
+            constants.commandid_stock = settings.commandid_stock
+
+
+            print("reading new values")
+            new_settings = print_settings_file()
+
+            embed = discord.Embed(
+                description=f"✅ Set `{setting.value}` to `{value}`. New `settings.txt`:\n\n```{new_settings}```",
+                color=constants.EMBED_COLOUR_OK
+            )
+
+            await interaction.response.send_message(embed=embed)
+
+        except Exception as e:
+            traceback.print_exc()
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
 
     # manually release a channel lock
     @lock_group.command(name='release', description='Manually release a designated channel lock object.')
@@ -325,7 +432,7 @@ class GeneralCommands(commands.Cog):
             lasttrade_cron.restart()
         else:
             nextrun = int(lasttrade_cron.next_iteration.timestamp())
-            embed.description=f'⏲ `lasttrade` cron task is running. Next run <t:{nextrun}:T> (<t:{nextrun}:R>)'
+            embed.description=f':timer: `lasttrade` cron task is running. Next run <t:{nextrun}:T> (<t:{nextrun}:R>)'
             embed.color=constants.EMBED_COLOUR_OK
             await interaction.response.send_message(embed=embed)
 
@@ -417,6 +524,188 @@ class GeneralCommands(commands.Cog):
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     await asyncio.sleep(1) # lip service to try to avoid a rate limit
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+
+    @wmm_group.command(name='status', description='Check the status of the WMM stock background task.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def wmm_status(self, interaction: discord.Interaction):
+        print(f"▶ WMM task check called by {interaction.user}")
+        try:
+
+            embed = please_wait_embed()
+
+            await interaction.response.send_message(embed=embed)
+
+            if not wmm_stock.is_running() or wmm_stock.failed():
+                print("⚠ WMM task has failed or stopped!")
+
+                embed = discord.Embed(
+                    description=f":warning: WMM stock background task is not running; WMM stock will not update. Restart it with `/admin wmm start`.",
+                    color=constants.EMBED_COLOUR_WARNING
+                )
+
+                await interaction.edit_original_response(embed=embed)
+
+            else:
+                print("✅ WMM task is running, returning status and next check interval.")
+                # generate hammertime for last loop and next loop
+                posix_time_now = get_formatted_date_string()[2]
+                next_loop_seconds = constants.wmm_interval - constants.wmm_slept_for
+                last_loop_absolute = posix_time_now - constants.wmm_slept_for
+                next_loop_absolute = posix_time_now + next_loop_seconds
+                last_hammertime = f"<t:{last_loop_absolute}:R>"
+                next_hammertime = f"<t:{next_loop_absolute}:R>"
+
+                embed = discord.Embed(
+                    title="WMM STOCK TRACKER STATUS",
+                    description=f"✅ WMM background task is running.\n:chart_with_upwards_trend: Last check: {last_hammertime}."
+                                f"\n:hourglass_flowing_sand: Next scheduled check {next_hammertime}."
+                                f"\n:timer: Current check interval: {int(constants.wmm_interval/60)} minutes.",
+                    color=constants.EMBED_COLOUR_OK
+                )
+                embed.set_footer(text="/cco wmm update can trigger updates outwith the above schedule.")
+
+            await interaction.edit_original_response(embed=embed)
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+
+    @wmm_group.command(name='stop', description='Stop the WMM background tasks; WMM status will not update.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def wmm_stop(self, interaction: discord.Interaction):
+        print(f"⚠ WMM task STOP called by {interaction.user}")
+        try:
+
+            wmm_stock.cancel()
+            print("Stopped WMM task.")
+
+            embed = discord.Embed(
+                description=f":warning: WMM stock background task has been halted. **WMM stock will NOT update until restarted**."
+                             " Use `/admin wmm start` to restart the background task.",
+                color=constants.EMBED_COLOUR_WARNING
+            )
+
+            await interaction.response.send_message(embed=embed)
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+
+    @wmm_group.command(name='start', description='Start the WMM background task if it is not running.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def wmm_start(self, interaction: discord.Interaction):
+        print(f"⚠ WMM task START called by {interaction.user}")
+
+        embed = please_wait_embed()
+
+        await interaction.response.send_message(embed=embed)
+
+        try:
+
+            if not wmm_stock.is_running(): # task is stopped, start it
+                print("WMM task was not running. Restarting...")
+                await start_wmm_task()
+
+                embed = discord.Embed(
+                    description="✅ WMM background task started.",
+                    color=constants.EMBED_COLOUR_OK
+                )
+
+                await interaction.edit_original_response(embed=embed)
+
+            else: # restart the task
+
+                embed.description="⏳ WMM task already running. Attempting to restart..."
+
+                await interaction.edit_original_response(embed=embed)
+
+                wmm_stock.cancel()
+
+                # wait for the task to finish
+                while wmm_stock.is_running():
+                    await asyncio.sleep(2)
+
+                await start_wmm_task()
+
+                embed = discord.Embed(
+                    description="✅ WMM background task was running and has been restarted.",
+                    color=constants.EMBED_COLOUR_OK
+                )
+
+                await interaction.edit_original_response(embed=embed)
+
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+
+
+    @wmm_group.command(name='interval', description='Set the interval for WMM stock updates in minutes. Default: 60 minutes.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def wmm_interval_set(self, interaction: discord.Interaction, interval: int):
+        print(f"⚠ WMM task interval called by {interaction.user} for value {interval} minutes")
+        try:
+            # convert to seconds
+            seconds = int(interval*60)
+            print(f"{interval} minutes is {seconds} seconds")
+
+            # update variable
+            constants.wmm_interval = seconds
+
+            # notify user
+
+            embed = discord.Embed(
+                description=f":timer: WMM stock will now update every {interval} minutes.",
+                color=constants.EMBED_COLOUR_OK
+            )
+
+            await interaction.response.send_message(embed=embed)
+        except Exception as e:
+            try:
+                raise GenericError(e)
+            except Exception as e:
+                await on_generic_error(interaction, e)
+
+
+    # synchronise the status of CAPI auth for all carriers in the database
+    @admin_group.command(name='capi_sync', description='Synchronise CAPI status for all carriers in database. WARNING: takes a while.')
+    @check_roles([admin_role()])
+    @check_command_channel(bot_command_channel())
+    async def capi_database_sync(self, interaction: discord.Interaction):
+        print(f"⚠ CAPI database status sync called by {interaction.user}")
+
+        try:
+            embed = discord.Embed(
+                description=":warning: This command should only be run when first transitioning from StockBot or when rebuilding the carrier database."
+                            f" It will iterate through every PTN Fleet Carrier in the <@{bot.user.id}> database and attempt to connect to its associated Frontier account via the cAPI."
+                            " This could take a couple of seconds per registered Fleet Carrier, so several minutes in total. Are you sure you want to continue?",
+                color=constants.EMBED_COLOUR_WARNING
+            )
+
+            view = ConfirmCAPISync(embed, interaction.user)
+
+            await interaction.response.send_message(embed=embed, view=view)
+
+            view.message = await interaction.original_response()
 
         except Exception as e:
             try:

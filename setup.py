@@ -35,7 +35,7 @@ setup(
         ],
     description='Pilots Trade Network Mission Alert Bot',
     long_description=long_description,
-    author='Charles Tosh',
+    author='Charlie Tosh',
     url='',
     install_requires=[
         # 'aiohttp==3.7.4.post0',
@@ -58,7 +58,9 @@ setup(
         'asyncpraw==7.7.0',
         'asyncprawcore==2.3.0',
         'python-dateutil>=2.8.1',
-        'emoji>=2.2.0'
+        'emoji>=2.2.0',
+        'bs4>=0.0.1',
+        'texttable>=1.6.4'
     ],
     entry_points={
         'console_scripts': [

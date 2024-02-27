@@ -5,14 +5,24 @@ Depends on: constants, ErrorHandler
 
 """
 
+import sys
+
+if __name__ == "__main__":
+    # Prevent accidental independent execution of this file 
+    print("This script should not be run independently. Please run it through application.py.")
+    # Exit the script with an error code
+    sys.exit(1)
+
 # libraries
 import os
 import sqlite3
 import asyncio
+import json
 import shutil
 import enum
 import discord
 import pickle
+import traceback
 from datetime import datetime
 from datetime import timezone
 
@@ -24,6 +34,7 @@ from ptn.missionalertbot.classes.MissionParams import MissionParams
 from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierData
 from ptn.missionalertbot.classes.NomineesData import NomineesData
 from ptn.missionalertbot.classes.WebhookData import WebhookData
+from ptn.missionalertbot.classes.WMMData import WMMData
 
 # local constants
 import ptn.missionalertbot.constants as constants
@@ -42,10 +53,68 @@ def build_directory_structure_on_startup():
     os.makedirs(constants.IMAGE_PATH, exist_ok=True) # /images - carrier images
     os.makedirs(f"{constants.IMAGE_PATH}/old", exist_ok=True) # /images/old - backed up carrier images
     os.makedirs(constants.SQL_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
+    os.makedirs(constants.SETTINGS_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
     os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
     os.makedirs(constants.CC_IMAGE_PATH, exist_ok=True) # /images/cc - CC thumbnail images
 
 build_directory_structure_on_startup() # build directory structure when bot first starts
+
+class Settings:
+    def __init__(self):
+        self.wmm_autostart = constants.wmm_autostart
+        self.commandid_stock = constants.commandid_stock
+
+    def read_settings_file(self, file_path = constants.SETTINGS_FILE_PATH):
+        # method to read settings from file and update class attributes
+        with open(file_path, 'r') as file:
+            for line in file:
+                key, value = line.strip().split('=')
+                # Convert 'True'/'False' to boolean if necessary
+                if value.strip().lower() == 'true':
+                    value = True
+                elif value.strip().lower() == 'false':
+                    value = False
+                elif value.strip().lower() == 'none':
+                    value = None
+                else:
+                    value = value.strip()
+                setattr(self, key.strip(), value)
+                print("Updated %s = %s" % (key.strip(), value))
+
+    def write_settings(self, file_path = constants.SETTINGS_FILE_PATH):
+        # method to write changed settings values to the file
+        with open(file_path, 'w') as file:
+            for attr_name, attr_value in vars(self).items():
+                file.write(f"{attr_name} = {attr_value}\n")
+        with open(file_path, 'r') as file:
+                file_contents = file.read()
+                print(f"Updated {constants.SETTINGS_FILE}:")
+                print(file_contents)
+
+def print_settings_file(file_path = constants.SETTINGS_FILE_PATH):
+    with open(file_path, 'r') as file:
+        file_contents = file.read()
+        return file_contents
+
+def create_settings_file():
+    try:
+        print("Creating Settings instance")
+        settings = Settings()
+        if os.path.exists(constants.SETTINGS_FILE_PATH):
+            print("Reading existing settings.txt")
+            # update class instance with existing settings
+            settings.read_settings_file()
+        # write any missing settings
+        print("Writing settings.txt")
+        settings.write_settings()
+        # save these values back to our global Settings class
+        constants.wmm_autostart = settings.wmm_autostart
+        constants.commandid_stock = settings.commandid_stock
+    except Exception as e:
+        print(f"Error creating settings file: {str(e)}")
+        traceback.print_exc()
+
+create_settings_file()
 
 
 # connect to sqlite carrier database
@@ -63,7 +132,8 @@ carriers_table_create = '''
         discordchannel TEXT NOT NULL,
         channelid INT,
         ownerid INT,
-        lasttrade INT NOT NULL DEFAULT (cast(strftime('%s','now') as int))
+        lasttrade INT NOT NULL DEFAULT (cast(strftime('%s','now') as int)),
+        capi BOOLEAN DEFAULT 0
     )
     '''
 carriers_table_columns = ['p_ID', 'shortname', 'longname', 'cid', 'discordchannel', 'channelid', 'ownerid', 'lasttrade']
@@ -139,9 +209,29 @@ missions_tables_columns = ['carrier', 'cid', 'channelid', 'commodity', 'missiont
 channel_cleanup_table_delete = "DROP TABLE IF EXISTS channel_cleanup"
 
 
+# connect to sqlite wmm database
+wmm_conn = sqlite3.connect(constants.WMM_DB_PATH)
+wmm_conn.row_factory = sqlite3.Row
+wmm_db = wmm_conn.cursor()
+
+# wmm database creation
+wmm_table_create = '''
+    CREATE TABLE wmm(
+        carrier   TEXT NOT NULL UNIQUE,
+        cid   TEXT NOT NULL UNIQUE,
+        location   TEXT,
+        ownerid   INT,
+        notify    TEXT DEFAULT NULL,
+        capi BOOLEAN DEFAULT 0
+    )
+    '''
+
+wmm_table_columns = ['carrier', 'cid', 'location', 'notify', 'capi']
+
 # We need some locks while we wait on the DB queries
 carrier_db_lock = asyncio.Lock()
 mission_db_lock = asyncio.Lock()
+wmm_db_lock = asyncio.Lock()
 
 
 # dump db to .sql file
@@ -162,6 +252,8 @@ def dump_database_test(database_name):
         connection = missions_conn
     elif database_name == 'carriers':
         connection = carriers_conn
+    elif database_name == 'wmm':
+        connection = wmm_conn
     else:
         raise ValueError(f'Unknown DB dump handling for: {database_name}')
 
@@ -251,51 +343,33 @@ def create_missing_table(table, db_obj, create_stmt):
 
 
 # function to create a missing column
-def create_missing_column(table, column, existing, db_name, db_obj, db_conn, create_stmt):
-
+def create_missing_column(table, column, db_name, db_obj, db_conn, type):
     """
-    In order to create the new column, a new table has to be created because
-    SQLite does not allow adding a new column with a non-constant value.
-    We then copy data from table to table, and rename them into place.
-    We will leave the backup table in case something goes wrong.
-    There is not enough try/catch here to be perfect. sorry. (that's OK Durzo, thanks for the code!)
+    Inserts missing columns into the target database.
+    
+    Params:
 
-
-    :param str table: name of the table the new column should be created in
-    :param str column: name of the new column
-    :param list existing: list of all columns in table
-    :param str db_name: name of database
-    :param db_obj
-    :param sqlite.Connection.cursor db_obj: database cursor
-    :param sqlite.Connection db_conn: database connection
-    :param string create_stmt: table create command
-    :returns: return
-
+    table: name of the table to alter
+    column: name of new column to add
+    db_name: name of the database containing the target table
+    db_obj: the database object variable name used by database.py
+    db_conn: the database cursor variable name used by database.py
+    type: the type of column to create
     """
-    temp_ts = int(datetime.now(tz=timezone.utc).timestamp())
-    temp_database_table = f'{table}_newcolumn_{temp_ts}'
-    backup_database_table = f'{table}_backup_{temp_ts}'
 
-    print(f'{column} column missing from {db_name} database, creating new temp table: {temp_database_table}')
-    db_obj.execute(create_stmt.replace(table, temp_database_table))
+    print(f'{column} column missing from {db_name} database, inserting...')
 
-    # copy data from community_carriers table to new temp table.
-    print(f'Copying {table} data to new table.')
-    # new column won't exist, so remove it from the existing list
-    existing.remove(column)
-    db_obj.execute(f"INSERT INTO {temp_database_table} ({','.join(existing)}) select * from {table}")
+    # backup existing database
+    backup_database(table)
 
-    # rename old table and keep as backup just in case.
-    print(f'Renaming current {table} table to "{backup_database_table}"')
-    db_obj.execute(f'ALTER TABLE {table} RENAME TO {backup_database_table}')
+    statement = f'''ALTER TABLE {table} ADD COLUMN {column} {type}'''
 
+    try:
+        db_obj.execute(statement)
+    except Exception as e:
+        print(f"❌ Error adding {column} to {table}: {e}")
+        return
 
-    # rename temp table as original.
-    print(f'Renaming "{temp_database_table}" temp table to "{table}"')
-    db_obj.execute(f'ALTER TABLE {temp_database_table} RENAME TO {table}')
-
-
-    print('Operation complete.')
     db_conn.commit()
     return
 
@@ -315,7 +389,8 @@ def build_database_on_startup():
         'webhooks' : {'obj': carrier_db, 'create': webhooks_table_create},
         'community_carriers': {'obj': carrier_db, 'create': community_carriers_table_create},
         'nominees': {'obj': carrier_db, 'create': nominees_table_create},
-        'missions': {'obj': mission_db, 'create': missions_table_create}
+        'missions': {'obj': mission_db, 'create': missions_table_create},
+        'wmm': {'obj': wmm_db, 'create': wmm_table_create}
     }
 
     # check database exists, create from scratch if needed
@@ -334,38 +409,22 @@ def build_database_on_startup():
     #       obj (sqlite db obj): sqlite connection to db
     #       columns (list): list of existing column names
     #       conn (sqlite connection): connection to sqlitedb
-    #       create (str): sql create statement for table
+    #       type (str): type of column data
     new_column_map = {
-        'lasttrade': {
+        'capi': {
             'db_name': 'carriers',
             'table': 'carriers',
             'obj': carrier_db,
             'columns': carriers_table_columns,
             'conn': carriers_conn,
-            'create': carriers_table_create
+            'type': 'BOOLEAN DEFAULT 0'
         },
-        'roleid': {
-            'db_name': 'carriers',
-            'table': 'community_carriers',
-            'obj': carrier_db,
-            'columns': community_carriers_table_columns,
-            'conn': carriers_conn,
-            'create': community_carriers_table_create
-        },
-        'mission_params': {
-            'db_name': 'missions',
-            'table': 'missions',
-            'obj': mission_db,
-            'columns': missions_tables_columns,
-            'conn': missions_conn,
-            'create': missions_table_create
-        }
     }
 
     for column_name in new_column_map:
         c = new_column_map[column_name]
         if not check_table_column_exists(column_name, c['table'], c['obj']):
-            create_missing_column(c['table'], column_name, c['columns'], c['db_name'], c['obj'], c['conn'], c['create'])
+            create_missing_column(c['table'], column_name, c['db_name'], c['obj'], c['conn'], c['type'])
         else:
             print(f'{column_name} exists, do nothing')
 
@@ -429,8 +488,8 @@ async def add_carrier_to_database(short_name, long_name, carrier_id, channel, ch
     """
     await carrier_db_lock.acquire()
     try:
-        carrier_db.execute(''' INSERT INTO carriers VALUES(NULL, ?, ?, ?, ?, ?, ?, strftime('%s','now')) ''',
-                           (short_name, long_name, carrier_id, channel, channel_id, owner_id))
+        carrier_db.execute(''' INSERT INTO carriers VALUES(NULL, ?, ?, ?, ?, ?, ?, strftime('%s','now'), ?) ''',
+                           (short_name, long_name, carrier_id, channel, channel_id, owner_id, 0))
         carriers_conn.commit()
         print(f'Added {long_name} to database')
     finally:
@@ -498,6 +557,21 @@ async def _update_carrier_last_trade(pid):
             ''' UPDATE carriers
             SET lasttrade=strftime('%s','now')
             WHERE p_ID=? ''', ( [ pid ] ))
+        carriers_conn.commit()
+    finally:
+        carrier_db_lock.release()
+
+
+# update carrier cAPI flag
+async def _update_carrier_capi(pid, capi):
+    print("Setting capi to %s for carrier ID %s" % ( capi, pid ))
+    await carrier_db_lock.acquire()
+    try:
+        carrier_db.execute('''
+            UPDATE carriers
+            SET capi=?
+            WHERE p_ID=?
+            ''', ( [ capi, pid ] ))
         carriers_conn.commit()
     finally:
         carrier_db_lock.release()
@@ -759,7 +833,7 @@ def find_mission(searchterm, searchfield):
     # unpickle the mission_params object if it exists
     if mission_data.mission_params:
         print("Found mission_params, enumerating...")
-        mission_data.mission_params: MissionParams = pickle.loads(mission_data.mission_params)
+        mission_data.mission_params = pickle.loads(mission_data.mission_params)
         mission_data.mission_params.print_values()
     else:
         print("No mission_params found")
@@ -930,3 +1004,133 @@ async def find_commodity(mission_params, interaction):
         print(f"Found commodity {commodity.name}")
         mission_params.commodity_name = commodity.name
     return commodity
+
+
+# WMM find carrier
+def find_wmm_carrier(searchterm, searchfield):
+    print("called find_wmm_carrier for %s (%s)" % ( searchterm, searchfield ))
+    """
+    Searches the wmm database for a single matching entry
+
+    :param str searchterm: the searchterm to match
+    :param str searchfield: the DB column to match against
+    :returns: class instance WMMData
+    """
+    wmm_db.execute(f'''SELECT * FROM wmm WHERE {searchfield} LIKE (?)''',
+                        (f'%{searchterm}%',))
+    row = wmm_db.fetchone()
+
+    # check whether row exists
+    if row is None:
+        print(f'No entry found for {searchterm} in {searchfield}')
+        wmm_data = None
+        return wmm_data
+    else:
+        wmm_data = WMMData(row)
+        print(f'Found mission data: {wmm_data}')
+        return wmm_data
+
+
+# wmm fetch all carriers
+def _fetch_wmm_carriers():
+    """
+    Fetches all actively tracked WMM carriers from the DB.
+
+    :returns: A list of WMMData class objects
+    """
+    print("Called _fetch_wmm_carriers")
+    sql = "SELECT * FROM wmm"
+    wmm_db.execute(sql)
+
+    # instantiate into WMMData
+    wmm_carriers = [WMMData(wmm_carrier) for wmm_carrier in wmm_db.fetchall()]
+
+    return wmm_carriers
+
+
+# WMM start tracking
+async def _add_to_wmm_db(carrier, cid, location, ownerid, capi):
+    print("Called _add_to_wmm_db for %s (%s), at %s, owned by %s / capi: %s" % ( carrier, cid, location, ownerid, capi ))
+
+    # define variables
+    sql = f"INSERT INTO wmm VALUES (?, ?, ?, ?, ?, ?)"
+    values = [carrier, cid, location, ownerid, None, capi]
+
+    # write to database
+    try:
+        await wmm_db_lock.acquire()
+        wmm_db.execute(sql, values)
+        wmm_conn.commit()
+    finally:
+        wmm_db_lock.release()
+
+
+# WMM remove carrier
+async def _remove_from_wmm_db(cid):
+    print("Called _remove_from_wmm_db for %s" % ( cid ))
+    try:
+        await wmm_db_lock.acquire()
+        sql = "DELETE FROM wmm WHERE cid = (?)"
+        wmm_db.execute(sql, (cid,))
+        wmm_conn.commit()
+    finally:
+        wmm_db_lock.release()
+    return print("Deleted")
+
+
+# WMM generic database edit function
+# TODO: presently unused
+def _wmm_database_insert(data):
+    """
+    A function to write data into the WMM database.
+
+    :param dict data: a dict containing the column names and values
+    """
+    # Construct the SQL query from the dict
+    columns = ', '.join(data.keys())
+    placeholders = ', '.join('?' * len(data))
+    sql = f"INSERT INTO wmm ({columns}) VALUES ({placeholders})"
+
+    # Extract the values from the data dictionary
+    values = list(data.values())
+
+    # write to the db
+    wmm_db.execute(sql, values)
+
+
+# update WMM entry
+async def _update_wmm_carrier(wmm_data: WMMData):
+    """
+    Updates details for a WMM carrier. Uses the carrier's identifier to search.
+    
+    :param WMMData wmm_data: The updated dataset
+    """
+    print("Received data: %s %s %s %s" % ( wmm_data.carrier_location, wmm_data.notification_status, wmm_data.capi, wmm_data.carrier_identifier ))
+
+    # notification status is a list, so we need to transform it into json before storing it in the db
+    notification_status = json.dumps(wmm_data.notification_status) if wmm_data.notification_status else None
+
+    await wmm_db_lock.acquire()
+
+    try:
+
+        values = (
+            wmm_data.carrier_location,
+            notification_status,
+            wmm_data.capi,
+            wmm_data.carrier_identifier
+        )
+
+        sql = '''
+            UPDATE wmm
+            SET location = ?,
+                notify = ?,
+                capi = ?
+            WHERE cid = ?
+        '''
+
+        wmm_db.execute(sql, values)
+        wmm_conn.commit()
+
+    finally:
+        wmm_db_lock.release()

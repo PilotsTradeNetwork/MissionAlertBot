@@ -23,12 +23,19 @@ TEXT GEN FUNCTIONS
 """
 
 
-def txt_create_discord(interaction: Interaction, mission_params: MissionParams, preview=False):
+def txt_create_discord(interaction: Interaction, mission_params: MissionParams, preview=False, commodities_in_stock = None):
+    updated_stock_level = ""
+    if commodities_in_stock:
+        for commodity in commodities_in_stock: # placeholder code for when we have multiple commodities to deal with
+            posix_time = get_formatted_date_string()[2]
+            hammertime = f"<t:{posix_time}:R>"
+            updated_stock_level = f"({commodity['stock']} remaining as of {hammertime}) "
+
     discord_channel_id = mission_params.mission_temp_channel_id if not preview else None
     discord_channel = f"<#{discord_channel_id}>" if discord_channel_id else f"**#{mission_params.carrier_data.discord_channel}**"
     emoji = f'<:loading_emoji:{constants.loading_emoji()}>' if mission_params.mission_type == 'load' else f'<:unloading_emoji:{constants.unloading_emoji()}>' 
 
-    if hasattr(mission_params, "booze_cruise") and mission_params.booze_cruise: # pre-2.3.0 backwards compatibility
+    if mission_params.booze_cruise:
         print("Generating BC wine alert...")
         # **[Carriername (CAR-IDX)]** | @[Cmdr Name] | [Loading System]/[Loading Station] - **[Amount of Wine]k** :wine_glass:+ **[Amount of Tritium]**:oil: @[Purchase Price of Tritium above Gal Avg]k/t
         if preview:
@@ -40,7 +47,8 @@ def txt_create_discord(interaction: Interaction, mission_params: MissionParams, 
             f"**{name_link}** "
             f"**({mission_params.carrier_data.carrier_identifier})** | "
             f" <@{mission_params.carrier_data.ownerid}> | {mission_params.system.title()}/{mission_params.station.title()} - "
-            f"**{mission_params.demand}k :wine_glass:**"
+            f"**{mission_params.demand}k :wine_glass:** "
+            f"{updated_stock_level}"
             f"{mission_params.cco_message_text if mission_params.cco_message_text else ''}"
         )
     else:
@@ -51,7 +59,9 @@ def txt_create_discord(interaction: Interaction, mission_params: MissionParams, 
             f"{mission_params.commodity_name} "
             f"{'from' if mission_params.mission_type == 'load' else 'to'} **{mission_params.station.upper()}** station in system "
             f"**{mission_params.system.upper()}** : {mission_params.profit}k per unit profit : "
-            f"{mission_params.demand}k {'demand' if mission_params.mission_type == 'load' else 'supply'} : {mission_params.pads.upper()}-pads."
+            f"{mission_params.demand}k {'demand' if mission_params.mission_type == 'load' else 'supply'} "
+            f"{updated_stock_level}"
+            f": {mission_params.pads.upper()}-pads."
         )
 
     print(f"Defined discord trade alert text:")

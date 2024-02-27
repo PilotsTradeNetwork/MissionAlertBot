@@ -27,13 +27,14 @@ from ptn.missionalertbot.classes.CommunityCarrierData import CommunityCarrierDat
 
 # import local modules
 from ptn.missionalertbot.database.database import delete_nominee_from_db, delete_carrier_from_db, _update_carrier_details_in_database, find_carrier, CarrierDbFields, \
-    mission_db, missions_conn, add_carrier_to_database
-from ptn.missionalertbot.modules.DateString import get_mission_delete_hammertime
+    mission_db, missions_conn, add_carrier_to_database, carrier_db, _update_carrier_capi
+from ptn.missionalertbot.modules.DateString import get_mission_delete_hammertime, get_formatted_date_string
 from ptn.missionalertbot.modules.Embeds import _configure_all_carrier_detail_embed, _generate_cc_notice_embed, role_removed_embed, role_granted_embed, cc_renamed_embed, \
     _add_common_embed_fields, orphaned_carrier_summary_embed
 from ptn.missionalertbot.modules.ErrorHandler import GenericError, on_generic_error, CustomError, AsyncioTimeoutError
 from ptn.missionalertbot.modules.helpers import _remove_cc_manager
 from ptn.missionalertbot.modules.MissionCleaner import _cleanup_completed_mission
+from ptn.missionalertbot.modules.StockHelpers import capi
 
 
 # buttons for confirm role add
@@ -95,8 +96,8 @@ class ConfirmGrantRoleView(View):
         if not self.embeds:
         # return a message to the user that the interaction has timed out
             timeout_embed = discord.Embed(
-                description="Timed out.",
-                color=constants.EMBED_COLOUR_ERROR
+                description=":timer: Timed out.",
+                color=constants.EMBED_COLOUR_EXPIRED
             )
             self.embeds = [timeout_embed]
 
@@ -152,8 +153,8 @@ class ConfirmRemoveRoleView(View):
 
         # return a message to the user that the interaction has timed out
         timeout_embed = discord.Embed(
-            description="Timed out.",
-            color=constants.EMBED_COLOUR_ERROR
+            description=":timer: Timed out.",
+            color=constants.EMBED_COLOUR_EXPIRED
         )
 
         try:
@@ -261,8 +262,8 @@ class ConfirmRenameCC(View):
 
         # return a message to the user that the interaction has timed out
         timeout_embed = discord.Embed(
-            description="Timed out.",
-            color=constants.EMBED_COLOUR_ERROR
+            description=":timer: Timed out.",
+            color=constants.EMBED_COLOUR_EXPIRED
         )
 
         try:
@@ -337,8 +338,8 @@ class MissionDeleteView(View):
     async def on_timeout(self):
         # return a message to the user that the interaction has timed out
         timeout_embed = discord.Embed(
-            description="Timed out.",
-            color=constants.EMBED_COLOUR_ERROR
+            description=":timer: Timed out.",
+            color=constants.EMBED_COLOUR_EXPIRED
         )
 
         # remove buttons
@@ -836,23 +837,9 @@ class AddCarrierButtons(View):
                                         color=constants.EMBED_COLOUR_OK)
                     info_embed = _add_common_embed_fields(info_embed, carrier_data, interaction)
 
-                    cp_embed = discord.Embed(
-                        title="Copy/Paste code for Stockbot",
-                        description=f"▶ <#{bot_command_channel()}>:\n```;add_FC {carrier_data.carrier_identifier} {carrier_data.carrier_short_name} {carrier_data.ownerid}```",
-                        color=constants.EMBED_COLOUR_QU
-                    )
-
-                    embeds = [info_embed, cp_embed]
-
                     # TODO link with existing add_carrier function to remove duplicate code
 
-                    confirmation: discord.Message = await interaction.followup.send(embeds=embeds)
-
-                    stock_command_channel = bot.get_channel(bot_command_channel())
-
-                    content = f"<@{interaction.user.id}>: Please use the following command to add **{long_name}** ({carrier_id}) from {confirmation.jump_url} to Stockbot."
-
-                    await stock_command_channel.send(content=content, embed=cp_embed)
+                    confirmation: discord.Message = await interaction.followup.send(embed=info_embed)
 
                     # notify bot-spam
                     print("Notify bot-spam")
@@ -920,7 +907,8 @@ class AddCarrierButtons(View):
 
         if '🔎' in embed.title:
             # return a message to the user that the interaction has timed out
-            embed.set_footer(text="⏲ Timed out.")
+            embed.set_footer(text=":timer: Timed out.")
+            embed.color = constants.EMBED_COLOUR_EXPIRED
 
             try:
                 await self.message.edit(embed=embed, view=self)
@@ -988,6 +976,20 @@ class ConfirmPurgeView(View):
         await interaction.response.edit_message(embed=embed, view=None)
 
 
+    async def interaction_check(self, interaction: discord.Interaction): # only allow original command user to interact with buttons
+        if interaction.user.id == self.author.id:
+            return True
+        else:
+            embed = discord.Embed(
+                description="Only the command author may use these interactions.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            embed.set_image(url='https://media1.tenor.com/images/939e397bf929b9768b24a8fa165301fe/tenor.gif?itemid=26077542')
+            embed.set_footer(text="Seriously, are you 4? 🙄")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+
+
     async def on_timeout(self): 
         # remove buttons
         self.clear_items()
@@ -999,9 +1001,10 @@ class ConfirmPurgeView(View):
 
         embed: discord.Embed = message.embeds[0]
 
-        if embed.footer is not None:
+        if not embed.footer:
             # return a message to the user that the interaction has timed out
-            embed.set_footer(text="⏲ Timed out.")
+            embed.set_footer(text=":timer: Timed out.")
+            embed.color = constants.EMBED_COLOUR_EXPIRED
 
             try:
                 await self.message.edit(embed=embed, view=self)
@@ -1066,3 +1069,125 @@ class PurgeExcludeModal(Modal):
                 raise GenericError(e)
             except Exception as e:
                 await on_generic_error(interaction, e)
+
+
+# buttons for capi sync command
+class ConfirmCAPISync(View):
+    def __init__(self, original_embed: discord.Embed, author: typing.Union[discord.Member, discord.User]):
+        self.original_embed = original_embed
+        self.author = author
+        self.spamchannel = bot.get_channel(bot_spam_channel())
+        super().__init__(timeout=60)
+
+
+    @discord.ui.button(label='✗ Cancel', style=discord.ButtonStyle.danger, custom_id='capi_sync_cancel')
+    async def capi_sync_cancel(self, interaction: discord.Interaction, button):
+        print("User clicked cancel.")
+
+        self.original_embed.description="❌ Cancelled."
+        self.original_embed.color=constants.EMBED_COLOUR_OK
+
+        await interaction.response.edit_message(embed=self.original_embed, view=None)
+
+
+    @discord.ui.button(label='✔ Confirm', style=discord.ButtonStyle.primary, custom_id='capi_sync_confirm')
+    async def capi_sync_confirm(self, interaction: discord.Interaction, button):
+        print("User clicked confirm.")
+
+        posix_time_start = get_formatted_date_string()[2]
+        print(f"⏱ Start time: {posix_time_start}")
+
+        embed = discord.Embed(
+            description="⏳ Proceeding...",
+            color=constants.EMBED_COLOUR_QU
+        )
+
+        await interaction.response.edit_message(embed=embed, view=None)
+
+        # check fleet carrier capi status
+        carrier_db.execute(f"SELECT * FROM carriers")
+        carriers = [CarrierData(carrier) for carrier in carrier_db.fetchall()]
+
+        carrier: CarrierData
+
+        count = 0
+
+        updated_carriers = []
+
+        for carrier in carriers:
+            if not carrier.capi: # don't need to sync those already enabled
+                print("⏩ Processing %s (%s)" % ( carrier.carrier_long_name, carrier.carrier_identifier ))
+                capi_response = capi(carrier.carrier_identifier) # query CAPI
+                print(f"capi response: {capi_response.status_code}")
+                if capi_response.status_code == 200: # positive response, update the carrier db
+                    await _update_carrier_capi(carrier.pid, 1)
+                    count += 1 # tally our totals
+                    # generate a summary of carriers updated
+                    updated_carriers.append(carrier.carrier_long_name)
+    
+        posix_time_complete = get_formatted_date_string()[2]
+        print(f"✅ Complete time: {posix_time_start}")
+
+        total_time = int(posix_time_complete - posix_time_start)
+        print(f"⏱ Total time: {total_time} seconds")
+
+        # generate an embed summary
+        updated_carriers_string = ", ".join(updated_carriers)
+        embed = discord.Embed(
+            title="✅ CAPI SYNC COMPLETE",
+            description=f"Updated {count} carriers in {total_time} seconds:\n\n"
+                        f"{updated_carriers_string}",
+            color=constants.EMBED_COLOUR_OK
+        )
+
+        await interaction.edit_original_response(embed=embed, view=None)
+
+        spamchannel_embed = discord.Embed(
+            description=f"🤖 <@{interaction.user.id}> used `/admin sync_capi` in {interaction.message.jump_url} to update CAPI flag for {count} carriers.",
+            color=constants.EMBED_COLOUR_QU
+        )
+
+        await self.spamchannel.send(embed=spamchannel_embed)
+
+
+    async def interaction_check(self, interaction: discord.Interaction): # only allow original command user to interact with buttons
+        if interaction.user.id == self.author.id:
+            return True
+        else:
+            embed = discord.Embed(
+                description="Only the command author may use these interactions.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            embed.set_image(url='https://media1.tenor.com/images/939e397bf929b9768b24a8fa165301fe/tenor.gif?itemid=26077542')
+            embed.set_footer(text="Seriously, are you 4? 🙄")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+
+
+    async def on_timeout(self):
+        try:
+            # remove buttons
+            self.clear_items()
+            print("View timed out")
+
+            self.message: discord.Message
+
+            message = await self.message.channel.fetch_message(self.message.id)
+
+            embed: discord.Embed = message.embeds[0]
+
+            if not embed.title:
+                # return a message to the user that the interaction has timed out
+                embed.description=(":timer: Timed out.")
+                embed.color=constants.EMBED_COLOUR_EXPIRED
+
+                try:
+                    await self.message.edit(embed=embed, view=self)
+                except Exception as e:
+                    print(f'Failed applying timeout: {e}')
+
+            else:
+                await self.message.edit(view=None)
+        except Exception as e:
+            print(e)
+            traceback.print_exc()

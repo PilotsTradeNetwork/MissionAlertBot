@@ -8,6 +8,7 @@ Dependencies: constants, database, ImageHandling, TextGen, MissionGenerator
 # import libraries
 import aiohttp
 import asyncio
+import traceback
 import typing
 
 # import discord.py
@@ -58,7 +59,8 @@ class EditConfirmView(View):
         except Exception as e:
             print(e)
 
-        await edit_discord_alerts(interaction, self.mission_params, self.spamchannel, self.original_type)
+        alerts_channel = await edit_discord_alerts(interaction, self.mission_params, self.spamchannel)
+        await edit_discord_message(interaction, self.mission_params, self.spamchannel, self.original_type, alerts_channel)
         await update_webhooks(interaction, self.mission_params, self.spamchannel, self.original_type)
         await update_reddit_post(interaction, self.mission_params, self.spamchannel)
         await update_mission_db(interaction, self.mission_params, self.spamchannel)
@@ -241,24 +243,13 @@ async def edit_active_mission(interaction: discord.Interaction, mission_params: 
 
 
 
-async def edit_discord_alerts(interaction: discord.Interaction, mission_params: MissionParams, spamchannel, original_type):
+async def edit_discord_alerts(interaction: discord.Interaction, mission_params: MissionParams, spamchannel, commodities_in_stock = None):
     print("Updating Discord alert...")
 
     async with interaction.channel.typing():
         try:
-            # find alerts channel
-            if hasattr(mission_params, "booze_cruise"): # missions from 2.3.0 have this attribute
-                # 2.3.0 stores alerts channel used in params so we don't have to figure it out, just retrieve it
-                alerts_channel = bot.get_channel(mission_params.channel_alerts_actual)
-
-            elif mission_params.commodity_name.title() == 'Wine': # pre-2.3.0 wine missions always went to cellar
-                if mission_params.mission_type == 'load':
-                    alerts_channel = bot.get_channel(mission_params.channel_defs.wine_loading_channel_actual)
-                else:   # unloading block
-                    alerts_channel = bot.get_channel(mission_params.channel_defs.wine_unloading_channel_actual)
-
-            else: # pre-2.3.0 non-wine loads
-                alerts_channel = bot.get_channel(mission_params.channel_defs.alerts_channel_actual)            
+            # resolve alerts channel
+            alerts_channel = bot.get_channel(mission_params.channel_alerts_actual)          
 
             print(alerts_channel)
             print(mission_params.discord_alert_id)
@@ -282,22 +273,16 @@ async def edit_discord_alerts(interaction: discord.Interaction, mission_params: 
                 raise EnvironmentError(f'Could not find Discord user matching ID {mission_params.carrier_data.ownerid}')
 
             print("Create new alert text and embed")
-            mission_params.discord_text = txt_create_discord(interaction, mission_params)
-            if hasattr(mission_params, "booze_cruise") and not mission_params.booze_cruise: # pre-2.3.0 backwards compatibility
-                # TRUE if the BC flag is present, but not set (i.e. no BC state active)
-                embed = await return_discord_alert_embed(owner, mission_params)
-            else:
-                # these few lines of code are super dumb but basically just skip the embed generation if it's not needed :|
-                embed = await return_discord_alert_embed(owner, mission_params)
+            mission_params.discord_text = txt_create_discord(interaction, mission_params, False, commodities_in_stock)
+
+            embed = await return_discord_alert_embed(owner, mission_params)
 
             # edit in new trade alert message
             if discord_alert_msg:
                 try:
                     print("Edit alert message")
-                    if hasattr(mission_params, "booze_cruise"): # pre-2.3.0 backwards compatibility
-                        await discord_alert_msg.edit(content=mission_params.discord_text, suppress=True) if mission_params.booze_cruise else await discord_alert_msg.edit(embed=embed) 
-                    else:
-                        await discord_alert_msg.edit(embed=embed) 
+                    await discord_alert_msg.edit(content=mission_params.discord_text, suppress=True) if mission_params.booze_cruise else await discord_alert_msg.edit(embed=embed) 
+
                 except Exception as e:
                     print(e)
                     embed=discord.Embed(description=f"Error editing discord alert: {e}", color=constants.EMBED_COLOUR_ERROR)
@@ -306,7 +291,7 @@ async def edit_discord_alerts(interaction: discord.Interaction, mission_params: 
                 try:
                     print("Send new alert")
 
-                    submit_mission = await send_discord_alert(interaction, owner, mission_params)
+                    await send_discord_alert(interaction, owner, mission_params)
 
                     embed = discord.Embed(
                         description=f"Original alert not found. Replacement sent to <#{mission_params.channel_alerts_actual}>",
@@ -319,8 +304,18 @@ async def edit_discord_alerts(interaction: discord.Interaction, mission_params: 
                         raise CustomError(error)
                     except Exception as e:
                         await on_generic_error(interaction, e)
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
 
-            print("Updating Discord channel embeds...")
+    return alerts_channel
+
+
+async def edit_discord_message(interaction: discord.Interaction, mission_params: MissionParams, spamchannel, original_type, alerts_channel: discord.TextChannel):
+    print("Updating Discord channel embeds...")
+
+    async with interaction.channel.typing():
+        try:
             # get message object from carrier channel
             carrier_channel = bot.get_channel(mission_params.mission_temp_channel_id)
             try:
@@ -397,7 +392,7 @@ async def edit_discord_alerts(interaction: discord.Interaction, mission_params: 
             print(e)
 
         try:
-            updated_message = await discord_channel_msg.edit(embeds=send_embeds)
+            await discord_channel_msg.edit(embeds=send_embeds)
             print("Feeding back to user...")
             embed = discord.Embed(
                 title=f"Discord trade alerts updated for {mission_params.carrier_data.carrier_long_name}",

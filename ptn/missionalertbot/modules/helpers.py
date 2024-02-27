@@ -775,6 +775,18 @@ def flexible_carrier_search_term(search_term):
 
     return carrier_data
 
+# clear WMM channel
+async def clear_history(channel, limit=20):
+    try:
+        msgs = []
+        async for message in channel.history(limit=limit):
+            if message.author.name == bot.user.name:
+                msgs.append(message)
+        await channel.delete_messages(msgs)
+    except:
+        # discord doesn't let us delete history after 14 days, nothing we can do.
+        pass
+
 # presently unused
 # TODO: remove or incorporate
 def _get_id_from_mention(mention):

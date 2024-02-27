@@ -1,8 +1,8 @@
-class CarrierData:
+class WMMData:
 
     def __init__(self, info_dict=None):
         """
-        Class represents a carrier object as returned from the database.
+        Class represents a WMM tracking object as returned from the database.
 
         :param sqlite.Row info_dict: A single row from the sqlite query.
         """
@@ -12,19 +12,17 @@ class CarrierData:
         else:
             info_dict = dict()
 
-        self.carrier_long_name = info_dict.get('longname', None)
-        self.carrier_short_name = info_dict.get('shortname', None)
+        self.carrier_name = info_dict.get('carrier', None)
         self.carrier_identifier = info_dict.get('cid', None)
-        self.discord_channel = info_dict.get('discordchannel', None)
-        self.channel_id = info_dict.get('channelid', None)
-        self.ownerid = info_dict.get('ownerid', None)
-        self.lasttrade = info_dict.get('lasttrade', None)
-        self.pid = info_dict.get('p_ID', None)
+        self.carrier_location = info_dict.get('location', None)
+        self.carrier_owner = info_dict.get('ownerid', None)
+        self.notification_status = info_dict.get('notify', None)
         self.capi = info_dict.get('capi', None)
+
 
     def to_dictionary(self):
         """
-        Formats the carrier data into a dictionary for easy access.
+        Formats the data into a dictionary for easy access.
 
         :returns: A dictionary representation for the carrier data.
         :rtype: dict
@@ -41,10 +39,9 @@ class CarrierData:
 
         :rtype: str
         """
-        return 'CarrierData: CarrierLongName:{0.carrier_long_name} CarrierShortName:{0.carrier_short_name} ' \
-               'CarrierIdentifier:{0.carrier_identifier} DiscordChannel:{0.discord_channel} ' \
-               'DiscordChannelID:{0.channel_id} OwnerID:{0.ownerid} CarrierPid:{0.pid} ' \
-               'LastTrade:{0.lasttrade} cAPI: {0.capi} '.format(self)
+        return 'WMMData: CarrierLongName:{0.carrier_name} CarrierIdentifier:{0.carrier_identifier} ' \
+               'CarrierLocation:{0.carrier_location} NotificationStatus:{0.notification_status} ' \
+               'Owner: {0.carrier_owner} CAPI:{0.capi}'.format(self)
 
     def __bool__(self):
         """

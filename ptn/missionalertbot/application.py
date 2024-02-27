@@ -15,6 +15,7 @@ from ptn.missionalertbot.botcommands.GeneralCommands import GeneralCommands
 from ptn.missionalertbot.botcommands.CCOCommands import CCOCommands
 from ptn.missionalertbot.botcommands.CTeamCommands import CTeamCommands
 from ptn.missionalertbot.botcommands.DatabaseInteraction import DatabaseInteraction
+from ptn.missionalertbot.botcommands.StockTracker import StockTracker
 
 # import bot object, token, production status
 from ptn.missionalertbot.constants import bot, TOKEN, _production, DATA_DIR
@@ -36,6 +37,7 @@ async def missionalertbot():
         await bot.add_cog(CCOCommands(bot))
         await bot.add_cog(CTeamCommands(bot))
         await bot.add_cog(DatabaseInteraction(bot))
+        await bot.add_cog(StockTracker(bot))
         await bot.start(TOKEN)
 
 
