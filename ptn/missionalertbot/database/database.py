@@ -1131,6 +1131,7 @@ async def _update_wmm_carrier(wmm_data: WMMData):
 
         wmm_db.execute(sql, values)
         wmm_conn.commit()
+        print("WMM carrier updated.")
 
     finally:
         wmm_db_lock.release()

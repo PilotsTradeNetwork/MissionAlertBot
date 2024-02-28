@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.2
+- [#665](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/665) Fixed WMM task breaking if carrier stock is low on two or more commodities
+
+
 ## 2.4.1
 - Fixed reference to `;stock` in mission embed
 

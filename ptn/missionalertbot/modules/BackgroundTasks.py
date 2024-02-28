@@ -206,6 +206,8 @@ async def wmm_stock(message, wmm_channel, ccochannel):
     for carrier in wmm_carriers:
         print(f"Interrogating {carrier} for stock...")
         carrier_has_stock = False
+        # load our notification status as a list so we can use it later
+        notification_status = json.loads(carrier.notification_status) if carrier.notification_status else []
         if carrier.capi:
             print(f"Calling CAPI for {carrier.carrier_name}")
             capi_response = capi(carrier.carrier_identifier)
@@ -304,6 +306,7 @@ async def wmm_stock(message, wmm_channel, ccochannel):
 
             # if carrier has stock of the commodity
             if com['stock'] != 0:
+                print("Found stock for %s" % (com['name']))
                 carrier_has_stock = True
                 if com['name'].lower() not in wmm_station_stock[stn_data['currentStarSystem']][carrier.carrier_location]:
                     wmm_station_stock[stn_data['currentStarSystem']][carrier.carrier_location][com['name'].lower()] = int(com['stock'])
@@ -317,7 +320,7 @@ async def wmm_stock(message, wmm_channel, ccochannel):
                     )
 
                     # Notify the owner once per commodity per wmm_tracking session.
-                    notification_status = json.loads(carrier.notification_status) if carrier.notification_status else []
+                    print("Notification status: %s" % (notification_status))
                     if com['name'] not in notification_status:
                         print(f"Generating low stock warning for {carrier.carrier_name} to DM to owner")
                         
