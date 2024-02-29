@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.3
+- [#676](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/676) Fix for multi-word commodities not updating mission stock in alerts channel.
+- [#674](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/674) Check for whether stock type (supply/demand) matches mission type (loading/unloading).
+- [#670](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/670) Removed owner display name for mission channel MESSAGE embed, replaced with 'CARRIER OWNER'.
+- [#668](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/668) Fix for order of checks/background tasks on startup, so background tasks should start at correct time.
+- [#662](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/662) Added bot-spam notices for `/admin wmm start`, `/admin wmm stop`, `/admin wmm interval`, and `/cco wmm update`.
+
+
 ## 2.4.2
 - [#665](https://github.com/PilotsTradeNetwork/MissionAlertBot/issues/665) Fixed WMM task breaking if carrier stock is low on two or more commodities
 

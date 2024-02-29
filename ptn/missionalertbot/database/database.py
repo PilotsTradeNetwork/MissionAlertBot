@@ -206,8 +206,6 @@ missions_tables_columns = ['carrier', 'cid', 'channelid', 'commodity', 'missiont
     'profit', 'pad', 'demand', 'rp_text', 'reddit_post_id', 'reddit_post_url', 'reddit_comment_id',\
     'reddit_comment_url', 'discord_alert_id', 'mission_params']
 
-channel_cleanup_table_delete = "DROP TABLE IF EXISTS channel_cleanup"
-
 
 # connect to sqlite wmm database
 wmm_conn = sqlite3.connect(constants.WMM_DB_PATH)
@@ -428,13 +426,6 @@ def build_database_on_startup():
         else:
             print(f'{column_name} exists, do nothing')
 
-    # remove channel cleanup table
-    try:
-        print("Removing cleanup table if it exists")
-        mission_db.execute(channel_cleanup_table_delete)
-        missions_conn.commit()
-    except Exception as e:
-        print(e)
 
 # populate commodities database on fresh install
 def populate_commodities_table_on_startup():

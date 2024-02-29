@@ -540,7 +540,7 @@ async def return_discord_channel_embeds(mission_params: MissionParams):
     help_embed.set_image(url=constants.BLANKLINE_400PX)
 
     owner_text_embed = discord.Embed(
-        title=f"MESSAGE FROM {owner_name}",
+        title=f"MESSAGE FROM CARRIER OWNER",
         description=owner_text_description,
         color=constants.EMBED_COLOUR_RP
     )

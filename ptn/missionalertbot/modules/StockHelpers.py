@@ -128,12 +128,12 @@ def capi_fc_market_data(fcid):
 
 def get_fc_stock(fccode, source='inara'):
     if source == 'inara':
-        print("⏳ Attempting to fetch inara stock data for %s", [ fccode ])
+        print("⏳ Attempting to fetch inara stock data for %s", ( fccode ))
         stn_data = inara_fc_market_data(fccode)
         if not stn_data:
             return False
     elif source == 'capi':
-        print("⏳ Attempting to fetch capi stock data for %s", [ fccode ])
+        print("⏳ Attempting to fetch capi stock data for %s", ( fccode ))
         stn_data = capi_fc_market_data(fccode)
         if not stn_data:
             return False

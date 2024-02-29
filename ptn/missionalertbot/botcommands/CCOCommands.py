@@ -1113,17 +1113,32 @@ class CCOCommands(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
+            spamchannel = bot.get_channel(bot_spam_channel())
+
+            message: discord.Message = await interaction.original_response()
+
+            embed.description = f"💸 :arrows_counterclockwise: WMM update called by <@{interaction.user.id}> at {message.jump_url}."
+
+            notification = await spamchannel.send(embed=embed)
+
             if not wmm_stock.is_running() or wmm_stock.failed():
                 print("wmm_stock task has failed, restarting.")
 
                 embed = discord.Embed(
-                description="⚠ WMM stock background task was not running. Restarting now.",
+                description=":warning: WMM stock background task was not running. Restarting now.",
                 color=constants.EMBED_COLOUR_WARNING
                 )
 
                 await interaction.followup.send(embed=embed)
 
                 await start_wmm_task()
+
+                command_channel = bot.get_channel(bot_command_channel())
+
+                embed.description = f"💸 :warning: WMM background task was not running when update was called. Restart attempted. " \
+                                    f"Use `/admin wmm status` in <#{command_channel.id}> to check status of background task."
+
+                await notification.reply(embed=embed)
 
         except Exception as e:
             try:

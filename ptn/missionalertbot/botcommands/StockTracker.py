@@ -117,6 +117,7 @@ class StockTracker(commands.Cog):
 
             try:
                 stn_data = get_fc_stock(carrier_data.carrier_identifier, source)
+                print("Returned data from %s: %s" % ( carrier_data.carrier_identifier, stn_data ))
             except Exception as e:
                 try:
                     error = f"Error getting data for carrier {carrier_data.carrier_identifier}: {e}"
@@ -169,25 +170,32 @@ class StockTracker(commands.Cog):
             if mission_data:
                 print("⌛ Evaluating stock for trade alert update...")
                 mission_params: MissionParams = mission_data.mission_params
+                # define our mission commodity without spaces
+                mission_commodity = mission_params.commodity_name.title().replace(" ", "" )
                 # check if commodity from stock check matches from mission params
-                print("Checking for match for %s" % ( mission_params.commodity_name.title() ))
+                print("Checking for match for %s" % ( mission_commodity ))
 
                 # create a list of commodities in stock - this is to handle future planned multi-commodity support
                 commodities_in_stock = []
                 for com in com_data:
-                    if com['name'].title() == mission_params.commodity_name.title():
+                    if com['name'].lower() == mission_commodity.lower():
                         print("Found match: %s %s %s" % ( com['name'].title(), com['stock'], com['demand'] ))
+                        # retrieve correct value for supply or demand
                         if com['stock'] != 0 or com['demand'] != 0:
-                            # retrieve correct value for supply or demand
-                            stock = com['stock'] if com['stock'] != 0 else com['demand']
-                        # create a DICT to hold the name/stock pair
-                        commodity = {'name': com['name'].title(), 'stock': stock}
-                        # add DICT to our list
-                        commodities_in_stock.append(commodity)
+                            if mission_data.mission_type.lower() == 'load' and com['demand'] != 0:
+                                commodity = {'name': com['name'].title(), 'stock': com['demand'], 'type': 'demand'}
+                            elif mission_data.mission_type.lower() == 'unload' and com['stock'] != 0:
+                                commodity = {'name': com['name'].title(), 'stock': com['stock'], 'type': 'supply'}
+                            else:
+                                print("Supply/demand does not match mission type '%s', ignoring." % (mission_data.mission_type))
+                                # matching commodity but supply/demand does not match mission type, skip
+                                continue
+                            # add DICT to our list
+                            commodities_in_stock.append(commodity)
 
                 if commodities_in_stock:
                     for commodity in commodities_in_stock:
-                        print("Found matching commodity %s at %s" % ( commodity['name'], commodity['stock'] ))
+                        print("Found matching commodity %s %s at %s" % ( commodity['type'], commodity['name'], commodity['stock'] ))
 
                     spamchannel = bot.get_channel(bot_spam_channel())
 

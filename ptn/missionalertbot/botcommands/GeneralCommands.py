@@ -127,9 +127,6 @@ class GeneralCommands(commands.Cog):
         embed.set_image(url=random.choice(constants.hello_gifs))
         await devchannel.send(embed=embed)
 
-        # Check if any trade channels were not deleted before bot restart/stop
-        await check_trade_channels_on_startup()
-
         # start the lasttrade_cron loop if not running
         if not lasttrade_cron.is_running():
             lasttrade_cron.start()
@@ -142,6 +139,9 @@ class GeneralCommands(commands.Cog):
                 await start_wmm_task()
         else:
             print("⚠ WMM task autostart disabled, skipping")
+
+        # Check if any trade channels were not deleted before bot restart/stop
+        await check_trade_channels_on_startup()
 
 
     # processed on disconnect
@@ -599,6 +599,14 @@ class GeneralCommands(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
+            spamchannel = bot.get_channel(bot_spam_channel())
+
+            message: discord.Message = await interaction.original_response()
+
+            embed.description=f":warning: 💸 :stop_button: WMM background task was halted by <@{interaction.user.id}> at {message.jump_url}."
+
+            await spamchannel.send(embed=embed)
+
         except Exception as e:
             try:
                 raise GenericError(e)
@@ -629,6 +637,14 @@ class GeneralCommands(commands.Cog):
 
                 await interaction.edit_original_response(embed=embed)
 
+                spamchannel = bot.get_channel(bot_spam_channel())
+
+                message: discord.Message = await interaction.original_response()
+
+                embed.description=f"💸 :arrow_forward: WMM background task was started by <@{interaction.user.id}> at {message.jump_url}."
+
+                await spamchannel.send(embed=embed)
+
             else: # restart the task
 
                 embed.description="⏳ WMM task already running. Attempting to restart..."
@@ -650,6 +666,14 @@ class GeneralCommands(commands.Cog):
 
                 await interaction.edit_original_response(embed=embed)
 
+                spamchannel = bot.get_channel(bot_spam_channel())
+
+                message: discord.Message = await interaction.original_response()
+
+                embed.description=f"💸 :arrow_forward: WMM background task was restarted by <@{interaction.user.id}> at {message.jump_url}."
+
+                await spamchannel.send(embed=embed)
+
         except Exception as e:
             try:
                 raise GenericError(e)
@@ -664,6 +688,7 @@ class GeneralCommands(commands.Cog):
     async def wmm_interval_set(self, interaction: discord.Interaction, interval: int):
         print(f"⚠ WMM task interval called by {interaction.user} for value {interval} minutes")
         try:
+
             # convert to seconds
             seconds = int(interval*60)
             print(f"{interval} minutes is {seconds} seconds")
@@ -679,6 +704,15 @@ class GeneralCommands(commands.Cog):
             )
 
             await interaction.response.send_message(embed=embed)
+
+            spamchannel = bot.get_channel(bot_spam_channel())
+
+            message: discord.Message = await interaction.original_response()
+
+            embed.description=f"💸 :timer: WMM stock timer was changed to {interval} minutes by <@{interaction.user.id}> at {message.jump_url}."
+
+            await spamchannel.send(embed=embed)
+
         except Exception as e:
             try:
                 raise GenericError(e)
