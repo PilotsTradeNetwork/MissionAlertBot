@@ -257,8 +257,17 @@ class CCOCommands(commands.Cog):
         )
     @check_roles([certcarrier_role(), trainee_role(), rescarrier_role()])
     @check_command_channel([mission_command_channel(), training_mission_command_channel()])
-    async def load(self, interaction: discord.Interaction, carrier: str, commodity: str, system: str, station: str,
-                profit: str, pads: str, demand: str):
+    async def load(
+        self,
+        interaction: discord.Interaction,
+        carrier: str,
+        commodity: str,
+        system: str,
+        station: str,
+        profit: str,
+        pads: str,
+        demand: str
+    ):
         mission_type = 'load'
 
         pads = 'L' if 'l' in pads.lower() else 'M'
@@ -313,8 +322,17 @@ class CCOCommands(commands.Cog):
         )
     @check_roles([certcarrier_role(), trainee_role(), rescarrier_role()])
     @check_command_channel([mission_command_channel(), training_mission_command_channel()])
-    async def unload(self, interaction: discord.Interaction, carrier: str, commodity: str, system: str, station: str,
-                profit: str, pads: str, supply: str):
+    async def unload(
+        self,
+        interaction: discord.Interaction,
+        carrier: str,
+        commodity: str,
+        system: str,
+        station: str,
+        profit: str,
+        pads: str,
+        supply: str
+    ):
         mission_type = 'unload'
 
         pads = 'L' if 'l' in pads.lower() else 'M'
